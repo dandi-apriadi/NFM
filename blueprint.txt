@@ -1,0 +1,62 @@
+================================================================================
+NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v2.4 [RESILIENT MESH]
+================================================================================
+Deskripsi: Sovereign AI-Blockchain Ecosystem dengan Bootstrapping Risk 
+Mitigation, Hybrid Model Support, dan Zero-Config UX.
+================================================================================
+
+[STRUKTUR DIREKTORI PROYEK]
+
+NFM_Project/
+├── core/                       # Brain of the Mesh
+│   ├── hybrid_engine/          # [NEW] Multi-model Support (TinyLlama to Large LLM)
+│   ├── dsmo_orchestrator/      # Adaptive Load Balancing
+│   └── secure_shredder/        # Privacy Layer (SDS)
+│
+├── blockchain_node/            # Native L1 NFM Chain
+│   ├── economic_governance/    # [NEW] Buyback & Redistribution Logic
+│   └── identity/               # NFM-ID (Biometric & PQC)
+│
+├── client_apps/                # The Resilient App Suite
+│   ├── nfm_node_runner/        # Foreground Worker (cas-only mode)
+│   └── nfm_super_app/          # Universal Gateway
+│
+└── config/
+    └── bootstrap_alpha.yaml    # Initial config for 1 Laptop + 3 Phones
+
+================================================================================
+[STRATEGI MITIGASI RISIKO ALPHA]
+
+1. HYBRID MODEL DEPLOYMENT (Cold Start Solution)
+--------------------------------------------------------------------------------
+- **Phase 1 (Small Cluster)**: Jaringan menggunakan "Small-Language-Models" 
+  (SLM) seperti Phi-2 atau TinyLlama yang sangat cepat dijalankan di HP/Laptop.
+- **Phase 2 (Growth)**: Seiring bertambahnya node, sistem secara otomatis 
+  meng-upgrade model ke GPT-level melalui fragmentasi DSMO.
+
+2. MOBILE BACKGROUND PERSISTENCE
+--------------------------------------------------------------------------------
+- **Foreground Mode**: Node Runner di Android berjalan sebagai service prioritas 
+  tinggi (dengan notifikasi) agar tidak dimatikan paksa oleh OS.
+- **Charge-Triggered Compute**: Komputasi berat hanya aktif saat ponsel sedang 
+  di-cas, menjaga kesehatan baterai dan kenyamanan pengguna.
+
+3. ECONOMIC REINFORCEMENT (Liquidity Solution)
+--------------------------------------------------------------------------------
+- **Founder Buyback**: Integrasi otomatis antara profit Marketplace Fiat (Xendit) 
+  untuk menyerap (buyback) NFM Gold guna menjaga harga dan insentif node.
+- **Utility Priority**: Fitur AI eksklusif yang hanya bisa diakses dengan 
+  NFM Credit, menciptakan demand alami terhadap token.
+
+================================================================================
+[ALUR KERJA (RESILIENT)]
+
+POWER ON/CAS -> START FOREGROUND SERVICE -> MODEL SELECT (SLM/LLM) -> 
+COMPUTE -> ZK-VERIFY -> RECYCLING + BUYBACK SYNC -> REWARD DISBURSED.
+
+================================================================================
+[CATATAN V2.4]
+
+- Reliability: Sistem tetap berjalan meski hardware terbatas.
+- Continuity: Menjamin node operator tidak rugi di masa-masa awal project.
+================================================================================
