@@ -1,41 +1,56 @@
 ================================================================================
-NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v3.7 [INFRA MESH]
+NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v4.0 [OMNI-CHANNEL MESH]
 ================================================================================
-Deskripsi: Sovereign AI-Blockchain Ecosystem dengan Hirarki Infrastruktur Tegas: 
-Dedicated Servers (Backbone) & Mobile Nodes (Supporting Mesh).
+Deskripsi: Sovereign AI-Blockchain Ecosystem dengan Web Access Layer, 
+NFM-ID Bridge (QR Biometric), Sentient Learning, dan Anti-Exploit Logic.
 ================================================================================
 
-[HIRARKI NODE & REWARD]
+[STRUKTUR DIREKTORI PROYEK]
 
-1. BACKBONE NODES (Genesis & Pro)
+NFM_Project/
+├── core/                       # Brain of the Mesh
+│   ├── edge_gateway/           # [NEW] Web-to-Mesh RPC & API Bridge
+│   ├── id_bridge/              # [NEW] Mobile-to-Web Biometric Sync
+│   └── native_brain/            # Sovereign Core AI
+│
+├── blockchain_node/            # Native L1 NFM Chain
+│   ├── decentralized_web/      # [NEW] Internal Web Hosting (Shard-based)
+│   └── governance_dao/         # Web-based Voting Portal
+│
+├── client_apps/                # The Omni-Apps suite v4.0
+│   ├── nfm_web_portal/         # Browser-based Dashboard
+│   └── nfm_super_app/          # Biometric Auth Controller (Master Keys)
+│
+└── docs/                       # Comprehensive Architecture Suite v4.0
+
+================================================================================
+[WEB ACCESS LAYER & NFM-ID BRIDGE]
+
+1. THE NFM-ID BRIDGE (QR LOGIN)
 --------------------------------------------------------------------------------
-- **Hardware**: Dedicated Servers, High-End Desktops, GPU Clusters.
-- **Tugas**: Hosting Model AI Full-Scale (LLM), Distributed Training.
-- **Reward**: High Yield (Multiplier 1.5x - 2.0x).
-- **Status**: Tulang punggung operasional jaringan.
+- Browser meminta login -> Generate QR -> HP Scan (Biometrik) -> 
+  HP kirim ZK-Proof ke Browser via Mesh -> Login Berhasil.
+- Keuntungan: Keamanan HP digabung dengan kenyamanan layar lebar Browser.
 
-2. AUXILIARY MESH (Lite)
+2. DECENTRALIZED WEB HOSTING
 --------------------------------------------------------------------------------
-- **Hardware**: Smartphones (Android/iOS), IoT Devices, Low-End Laptops.
-- **Tugas**: Secure Data Sharding (SDS), Multi-Node Verification, Scout Crawling.
-- **Reward**: Passive Income (Base Reward 1.0x).
-- **Status**: Pendukung keamanan dan desentralisasi data.
+- File website NFM dipecah (sharding) dan disimpan di jaringan NFM sendiri.
+- Mencegah DNS Blocking atau sensor oleh pihak ketiga.
+
+3. WEB-TO-MESH RPC GATEWAY
+--------------------------------------------------------------------------------
+- Browser berinteraksi dengan Blockchain NFM melalui Edge Gateway.
+- Ringkasan data (Explorer) diambil secara cerdas tanpa harus download shard AI.
 
 ================================================================================
-[STRUKTUR DIREKTORI & LOGIKA]
-- `core/orchestrator`: Mengutamakan alokasi task berat ke Backbone Nodes.
-- `docs/tokenomics`: Penyesuaian persentil berdasarkan kekuatan hardware real-time.
+[ALUR KERJA (WEB ACCESS)]
+
+OPEN WEB -> SCAN QR (HP) -> BIOMETRIC VERIFY -> ACCESS GRANTED -> 
+INTERACT WITH MESH (VOTE/STAKE/EXPLORE).
 
 ================================================================================
-[ALUR KERJA (INFRASTRUCTURE-BASED)]
+[CATATAN v4.0]
 
-REQUEST AI -> ORCHESTRATOR -> DETECT BACKBONE -> PROCESS LLM -> 
-SEND TO MOBILE MESH -> VALIDATE & SHARD -> RESULT TO USER.
-
-================================================================================
-[CATATAN v3.7]
-
-- Scalability: Menambah ribuan HP memisahkan keamanan, tapi menambah ribuan 
-  server meningkatkan kecerdasan. NFM butuh keduanya.
-- Fair Reward: Pekerja keras (Server) dibayar lebih mahal daripada HP.
+- Accessibility: NFM kini bisa diakses dari perangkat manapun dengan browser.
+- Security: Walaupun lewat web, "Kunci Utama" tetap berada di biometrik HP Anda.
 ================================================================================

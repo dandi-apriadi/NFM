@@ -18,9 +18,11 @@ Daftar aplikasi dalam ekosistem NFM dengan detail fitur utama.
 *   **Intelligent Transfer**: Kirim token via @alias dengan AI verification.
 *   **In-App Swap**: Jual/beli token langsung menjadi fiat/stablecoin.
 
-## 3. NFM Explorer & Dashboard
-*   **Network Metrics**: Pantau total kapasitas node global secara real-time.
-*   **Governance**: Tempat staking Gold dan voting masa depan project.
+## 3. NFM Web Portal (Explorer & Governance)
+*   **Web-to-Mesh Layer**: Akses statistik dan voting dari browser melalui NFM Edge Gateway.
+*   **Decentralized Hosting**: Website NFM di-host oleh jaringan NFM sendiri (Anti-Block).
+*   **NFM-ID Bridge (Secure Login)**: Login aman di web menggunakan scan **QR Code** dari HP. Verifikasi biometrik tetap dilakukan di HP, sementara sesi terbuka di browser.
+*   **Governance & Staking**: Interface layar lebar untuk membaca proposal AI yang kompleks.
 
 ## 4. NFM Developer Portal
 *   **API Management**: Kontrol akses profesional untuk integrasi pihak ketiga.
@@ -29,3 +31,6 @@ Daftar aplikasi dalam ekosistem NFM dengan detail fitur utama.
 
 ## 5. NFM CLI Tool
 *   **Professional Tool**: Untuk developer melakukan debugging dan deployment model.
+## 6. NFM-ID Bridge Protocol
+*   **Cross-Device Auth**: Protokol yang menghubungkan keamanan biometrik HP dengan kemudahan akses Web Browser.
+*   **Session Management**: Token akses didekripsi secara lokal di HP sebelum diberikan ke browser untuk menjaga privasi "Zero-Trust".
