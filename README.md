@@ -15,6 +15,9 @@ Selamat datang di repositori dokumentasi NFM. File `blueprint.txt` di root folde
 | [`docs/native_brain_and_learning.md`](./docs/native_brain_and_learning.md) | Konsep Otak Native NFM dan Pembelajaran Kolektif (Sentient). |
 | [`docs/gamification_and_quests.md`](./docs/gamification_and_quests.md) | Sistem Quest, Item Booster, dan Sindikat Sosial. |
 | [`docs/nfm_brain_curriculum.md`](./docs/nfm_brain_curriculum.md) | Pengetahuan dasar (Kurikulum) untuk pengelolaan cerdas NFM Brain. |
+| [`docs/implementation_roadmap.md`](./docs/implementation_roadmap.md) | **Master To-Do List** untuk seluruh fitur di 5 aplikasi NFM. |
+| [`docs/folder_structure.md`](./docs/folder_structure.md) | Penjelasan **Struktur Folder** proyek NFM. |
+| [`docs/reward_simulation.md`](./docs/reward_simulation.md) | Simulasi **Depresi Reward Pool** dan Mekanisme Refill. |
 
 ## Langkah Pengembangan Selanjutnya (Roadmap)
 1. **Fase Alpha**: Menjalankan cluster pertama (1 Laptop + 3 HP) menggunakan config `bootstrap_config.yaml`.

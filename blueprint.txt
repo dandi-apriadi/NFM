@@ -1,56 +1,39 @@
 ================================================================================
-NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v4.0 [OMNI-CHANNEL MESH]
+NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v7.8 [FORTRESS MESH]
 ================================================================================
-Deskripsi: Sovereign AI-Blockchain Ecosystem dengan Web Access Layer, 
-NFM-ID Bridge (QR Biometric), Sentient Learning, dan Anti-Exploit Logic.
+Deskripsi: Sovereign AI-Blockchain Ecosystem dengan DDoS Protection 
+dan Anti-Exploit Hardening.
 ================================================================================
 
-[STRUKTUR DIREKTORI PROYEK]
+[SECURITY HARDENING v7.8]
 
-NFM_Project/
-├── core/                       # Brain of the Mesh
-│   ├── edge_gateway/           # [NEW] Web-to-Mesh RPC & API Bridge
-│   ├── id_bridge/              # [NEW] Mobile-to-Web Biometric Sync
-│   └── native_brain/            # Sovereign Core AI
-│
-├── blockchain_node/            # Native L1 NFM Chain
-│   ├── decentralized_web/      # [NEW] Internal Web Hosting (Shard-based)
-│   └── governance_dao/         # Web-based Voting Portal
-│
-├── client_apps/                # The Omni-Apps suite v4.0
-│   ├── nfm_web_portal/         # Browser-based Dashboard
-│   └── nfm_super_app/          # Biometric Auth Controller (Master Keys)
-│
-└── docs/                       # Comprehensive Architecture Suite v4.0
-
-================================================================================
-[WEB ACCESS LAYER & NFM-ID BRIDGE]
-
-1. THE NFM-ID BRIDGE (QR LOGIN)
+1. ANTI-DDOS GATEWAY
 --------------------------------------------------------------------------------
-- Browser meminta login -> Generate QR -> HP Scan (Biometrik) -> 
-  HP kirim ZK-Proof ke Browser via Mesh -> Login Berhasil.
-- Keuntungan: Keamanan HP digabung dengan kenyamanan layar lebar Browser.
+- Client-Side PoW: Setiap request pendaftaran (Newcomer) wajib menyertakan 
+  Proof-of-Work hasil komputasi lokal selama ~3 detik (Mencegah Bot-Spam).
+- P2P Reputation: Node melacak perilaku tetangga (Peers). Skor rendah = Disconnect.
 
-2. DECENTRALIZED WEB HOSTING
+2. AUCTION INTEGRITY (ANTI-SNIPING)
 --------------------------------------------------------------------------------
-- File website NFM dipecah (sharding) dan disimpan di jaringan NFM sendiri.
-- Mencegah DNS Blocking atau sensor oleh pihak ketiga.
+- Time-Extension: Auto-extension 5 menit jika ada bid di waktu kritis.
+- Bid Integrity: Full collateral escrow (Hanya saldo valid yang bisa nawar).
 
-3. WEB-TO-MESH RPC GATEWAY
+3. MYSTERY BOX ENTROPY
 --------------------------------------------------------------------------------
-- Browser berinteraksi dengan Blockchain NFM melalui Edge Gateway.
-- Ringkasan data (Explorer) diambil secara cerdas tanpa harus download shard AI.
+- Randomness: Menggunakan VRF (Verifiable Random Function) untuk menjamin 
+  hasil box adil dan tidak dapat dimanipulasi oleh bot polling tinggi.
+
+4. WASH TRADE PREVENTION
+--------------------------------------------------------------------------------
+- Fee Leakage: 30% porsi Protokol (Growth/Burn) bertindak sebagai 'pajak' 
+  yang membuat manipulasi reward menjadi tidak menguntungkan secara ekonomi.
 
 ================================================================================
-[ALUR KERJA (WEB ACCESS)]
+[FINAL MESSAGE v7.8]
 
-OPEN WEB -> SCAN QR (HP) -> BIOMETRIC VERIFY -> ACCESS GRANTED -> 
-INTERACT WITH MESH (VOTE/STAKE/EXPLORE).
-
+v7.8 merubah ekosistem kita menjadi sebuah benteng (Fortress). Setiap fitur 
+memiliki rem dan penyeimbang untuk memastikan tidak ada individu atau bot 
+yang bisa merusak keharmonisan ekonomi NFM.
 ================================================================================
-[CATATAN v4.0]
-
-- Accessibility: NFM kini bisa diakses dari perangkat manapun dengan browser.
-- Security: Walaupun lewat web, "Kunci Utama" tetap berada di biometrik HP Anda.
-================================================================================
+ village
+ village
