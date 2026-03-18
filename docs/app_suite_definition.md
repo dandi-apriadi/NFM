@@ -1,9 +1,31 @@
 # NFM App Suite Definition
 
-Daftar aplikasi dalam ekosistem NFM.
+Daftar aplikasi dalam ekosistem NFM dengan detail fitur utama.
 
-1. **NFM Node Runner**: Aplikasi backend "set-and-forget" untuk kontributor hardware.
-2. **NFM Super-App**: Chat AI, Dompet, dan Manajemen Identitas Biometrik.
-3. **NFM Explorer**: Portal transparansi untuk memantau blockchain dan AI.
-4. **NFM Developer Portal**: Tempat manajemen API Key dan Marketplace Agent (Dikendalikan Founder).
-5. **NFM CLI Tool**: Alat baris perintah untuk pengembang profesional.
+## 1. NFM Node Runner (The Engine)
+*   **Fungsi**: Software untuk menyumbangkan hardware (CPU/GPU/NPU/RAM) ke jaringan.
+*   **Zero-Config**: Instalasi satu-klik, deteksi hardware otomatis.
+*   **Performance Modes**:
+    *   **Quiet**: Penggunaan resource sangat rendah (<10%), tidak mengganggu pekerjaan lain.
+    *   **Balanced**: Keseimbangan optimal (50%) untuk pemakaian harian.
+    *   **Turbo**: Performa tinggi (80-90%) untuk user yang jarang memakai laptop/HP.
+    *   **Hardcore**: 100% Resource didedikasikan untuk NFM. Reward maksimal.
+*   **Mobile-Safe**: Mode "Only on Charge & Wi-Fi" untuk menjaga kesehatan baterai.
+
+## 2. NFM Super-App (Chat & Wallet)
+*   **AI Chat**: Akses ke AI NFM (Teks, Suara, Gambar).
+*   **NFM-ID Wallet**: Kelola NFM Gold/Credit dengan biometrik (Bio-ZKP).
+*   **Intelligent Transfer**: Kirim token via @alias dengan AI verification.
+*   **In-App Swap**: Jual/beli token langsung menjadi fiat/stablecoin.
+
+## 3. NFM Explorer & Dashboard
+*   **Network Metrics**: Pantau total kapasitas node global secara real-time.
+*   **Governance**: Tempat staking Gold dan voting masa depan project.
+
+## 4. NFM Developer Portal
+*   **API Management**: Kontrol akses profesional untuk integrasi pihak ketiga.
+*   **Marketplace**: Jual beli AI Agent ("Skill").
+*   **Admin Panel**: Khusus Founder untuk manajemen API Key Payment (Xendit).
+
+## 5. NFM CLI Tool
+*   **Professional Tool**: Untuk developer melakukan debugging dan deployment model.
