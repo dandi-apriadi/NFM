@@ -1,5 +1,11 @@
 mod block;
+mod identity;
+mod reward;
+
+use crate::identity::NfmId;
+use crate::reward::{EconomyPool, RewardEngine, ActiveNode};
 use block::Block;
+use std::fs;
 
 struct Blockchain {
     chain: Vec<Block>,
@@ -23,20 +29,12 @@ impl Blockchain {
         self.chain.last().expect("Chain should not be empty")
     }
 
-    fn is_chain_valid(&self) -> bool {
-        for i in 1..self.chain.len() {
-            let current = &self.chain[i];
-            let previous = &self.chain[i - 1];
-
-            if current.hash != current.calculate_hash() {
-                return false;
-            }
-
-            if current.previous_hash != previous.hash {
-                return false;
-            }
-        }
-        true
+    /// Export seluruh blockchain ke file JSON
+    fn export_json(&self, path: &str) {
+        let json = serde_json::to_string_pretty(&self.chain)
+            .expect("Failed to serialize blockchain");
+        fs::write(path, &json).expect("Failed to write JSON file");
+        println!("[EXPORT] Blockchain saved to: {}", path);
     }
 }
 
@@ -45,17 +43,73 @@ fn main() {
     println!("NFM ALPHA CORE [RUST] - Starting Blockchain");
     println!("==========================================");
 
-    let mut nfm_chain = Blockchain::new();
+    // 1. Inisialisasi Genesis ID (Founder)
+    let founder_id = NfmId::new("genesis_pub_key", "founder", 1);
+    println!("========================================");
+    println!("NFM NODE STARTED");
+    println!("Genesis ID: {}", founder_id.address);
+    println!("Handle: {}", founder_id.social_handle);
+    println!("Status: {}", if founder_id.is_soulbound { "SOULBOUND (LOCKED)" } else { "TRADABLE" });
+    println!("========================================");
 
-    println!("Mining block 1...");
-    nfm_chain.add_block(Block::new(1, "First Transaction: 100 Gold".to_string(), "".to_string()));
+    // 2. Inisialisasi Blockchain
+    let mut blockchain = Blockchain::new();
 
-    println!("Mining block 2...");
-    nfm_chain.add_block(Block::new(2, "Second Transaction: 50 Gold".to_string(), "".to_string()));
+    // 3. Inisialisasi Economy
+    let mut pool = EconomyPool::new();
+    let mut engine = RewardEngine::new();
 
-    for block in &nfm_chain.chain {
-        println!("{:?}", block);
+    // 4. Simulasi: Beberapa user menggunakan AI (membayar fee)
+    println!("\n[ECONOMY] Simulating AI usage...");
+    let users = vec![
+        ("@alice", 10.0),
+        ("@bob", 15.0),
+        ("@charlie", 8.0),
+        ("@dave", 20.0),
+        ("@eve", 5.0),
+    ];
+
+    for (user, fee) in &users {
+        let split = pool.collect_ai_fee(*fee);
+        println!("  {} paid {} NVCoin -> Pool+{:.1} | Bonus+{:.1} | Founder+{:.1} | Burn+{:.2}",
+            user, fee, split.to_reward_pool, split.to_bonus_pool, split.to_founder, split.to_burn);
+
+        blockchain.add_block(Block::new(
+            blockchain.chain.len() as u32,
+            format!("AI_FEE: {} paid {} NVCoin", user, fee),
+            "".to_string(),
+        ));
     }
 
-    // Note: self.chain.length() was a typo, should be len()
+    println!("\n[POOL STATUS] Reward Pool: {:.1} NVCoin | Bonus Pool: {:.1} NVCoin | Total Burned: {:.2} NVCoin",
+        pool.reward_pool, pool.bonus_pool, pool.total_burned);
+
+    // 5. Epoch: Distribusi reward pool ke node aktif
+    println!("\n[EPOCH] Distributing reward pool to active nodes...");
+    let active_nodes = vec![
+        ActiveNode { address: founder_id.address.clone(), work_score: 100 },
+        ActiveNode { address: "nfm_user_002_abcdef1234567890".to_string(), work_score: 50 },
+        ActiveNode { address: "nfm_user_003_fedcba0987654321".to_string(), work_score: 30 },
+    ];
+
+    if let Some(result) = engine.distribute_epoch(&mut pool, &active_nodes) {
+        println!("--- EPOCH {} ---", result.epoch_number);
+        println!("Pool Distributed: {:.1} NVCoin", result.pool_distributed);
+        for nr in &result.node_rewards {
+            println!("  {} -> {:.4} NVCoin", nr.address, nr.earned);
+        }
+
+        blockchain.add_block(Block::new(
+            blockchain.chain.len() as u32,
+            format!("EPOCH_{}: Distributed {:.1} NVCoin to {} nodes", result.epoch_number, result.pool_distributed, result.node_rewards.len()),
+            "".to_string(),
+        ));
+    }
+
+    // 6. Export blockchain ke JSON
+    blockchain.export_json("blockchain_output.json");
+
+    println!("\n==========================================");
+    println!("NFM Alpha Core - Shutdown");
+    println!("==========================================");
 }
