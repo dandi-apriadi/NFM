@@ -1,39 +1,36 @@
 ================================================================================
-NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v7.8 [FORTRESS MESH]
+NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v7.9.2 [CLEAN MESH]
 ================================================================================
-Deskripsi: Sovereign AI-Blockchain Ecosystem dengan DDoS Protection 
-dan Anti-Exploit Hardening.
+Deskripsi: Sovereign AI-Blockchain Ecosystem. 
+Status: Final Audit Approved.
 ================================================================================
 
-[SECURITY HARDENING v7.8]
+[ENGINEERING STANDARDS]
 
-1. ANTI-DDOS GATEWAY
+1. CORE ARCHITECTURE
 --------------------------------------------------------------------------------
-- Client-Side PoW: Setiap request pendaftaran (Newcomer) wajib menyertakan 
-  Proof-of-Work hasil komputasi lokal selama ~3 detik (Mencegah Bot-Spam).
-- P2P Reputation: Node melacak perilaku tetangga (Peers). Skor rendah = Disconnect.
+- Standar: `@architecture` & `Senior Architect Bundle`.
+- Fokus: Efisiensi memori Rust & Liveness Biometrik.
 
-2. AUCTION INTEGRITY (ANTI-SNIPING)
+2. SECURITY REVIEWS
 --------------------------------------------------------------------------------
-- Time-Extension: Auto-extension 5 menit jika ada bid di waktu kritis.
-- Bid Integrity: Full collateral escrow (Hanya saldo valid yang bisa nawar).
+- Standar: `@security-auditor` & `Security Engineer Bundle`.
+- Mekanisme: PoW Client-side & P2P Reputation Ban.
 
-3. MYSTERY BOX ENTROPY
+3. DEPLOYMENT (DOCKER)
 --------------------------------------------------------------------------------
-- Randomness: Menggunakan VRF (Verifiable Random Function) untuk menjamin 
-  hasil box adil dan tidak dapat dimanipulasi oleh bot polling tinggi.
+- Standar: `docker-expert`.
+- Target: Cross-platform (Linux, Windows, IoT).
 
-4. WASH TRADE PREVENTION
+4. PROTOCOL RULES (LOCKED)
 --------------------------------------------------------------------------------
-- Fee Leakage: 30% porsi Protokol (Growth/Burn) bertindak sebagai 'pajak' 
-  yang membuat manipulasi reward menjadi tidak menguntungkan secara ekonomi.
+- Tokenomics: 60/10/30 (Recycling/Bonus/Growth).
+- Identity: Dual-ID (nfm_addr & @handle).
+- Governance: Soulbound Founder ID #1.
+- Economy: Mystery Box Feedback-based (Cap 20k Newcomer).
 
 ================================================================================
-[FINAL MESSAGE v7.8]
+[FINAL HANDOVER v7.9.2]
 
-v7.8 merubah ekosistem kita menjadi sebuah benteng (Fortress). Setiap fitur 
-memiliki rem dan penyeimbang untuk memastikan tidak ada individu atau bot 
-yang bisa merusak keharmonisan ekonomi NFM.
+Seluruh dokumentasi telah disinkronisasi. NFM siap untuk tahap eksekusi kode.
 ================================================================================
- village
- village

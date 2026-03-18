@@ -1,19 +1,19 @@
-# NFM Security Audit: Data fragments & Biometrics
+# NFM Security Audit & Fortress Mesh (v7.9.2)
 
-Audit keamanan mendalam untuk sistem NFM (Neural Fragment Mesh).
+## 1. Anti-DDoS & Flow Protection
+- **PoW Challenge**: Tantangan komputasi 3 detik bagi pendaftaran Newcomer.
+- **P2P Reputation**: Auto-ban untuk node yang mengirim paket sampah.
+- **1 IP = 1 Account**: Limitasi pendaftaran berbasis IP jaringan.
 
-## 1. Verifikasi Proof-of-Computation (PoC)
-- **ZKP (Zero-Knowledge Proofs)**: Digunakan untuk memastikan node benar-benar melakukan kalkulasi tanpa melihat data asli.
-- **Optimistic Verification**: Periode tantangan di mana validator bisa menantang hasil komputasi yang mencurigakan.
+## 2. Anti-Exploit Logic (Items)
+- **Probability Entropy**: Menggunakan VRF (Verifiable Random Function) untuk Mystery Box.
+- **Soft-Extension Auction**: Perpanjangan lelang 5 menit jika ada bid di waktu kritis.
+- **Stacking Cap**: Maksimal 3 item booster per akun.
 
-## 2. Jaringan P2P & Resiliensi
-- **Sybil Attack Protection**: Node wajib melakukan Staking NFM Gold untuk mendapatkan hak suara dalam konsensus.
-- **NAT Traversal (STUN/TURN)**: Menjamin konektivitas antar node di belakang firewall.
+## 3. Identity Security (NFM Brain)
+- **Bio-ZKP**: Verifikasi biometrik diproses lokal, hanya ZK-Proof yang dikirim ke chain.
+- **Soulbound Lock**: Proteksi akses administratif untuk Master ID #1.
 
-## 3. Secure Data Sharding (SDS)
-- **Fragmentation**: Data dipecah menjadi ribuan biner acak di sisi klien.
-- **Obfuscation**: Format tensor biner non-standar yang mustahil dibaca manusia secara manual.
-
-## 4. Ultimate Security (NFM-ID)
-- **Bio-ZKP**: Verifikasi retina dan sidik jari diproses secara lokal (Secure Enclave). Hasil verifikasi berupa ZK-Proof dikirim ke jaringan.
-- **Post-Quantum Cryptography (PQC)**: Enkripsi berbasis kisi (Lattice-based) yang aman dari ancaman komputer kuantum di masa depan.
+## 4. Compliance & Punishment
+- **Slashing/Burning**: Pelanggaran berat membakar item dan mengembalikannya ke pool publik.
+- **Elite Suspension**: Perlindungan manual review bagi pemegang aset langka.

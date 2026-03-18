@@ -1,24 +1,29 @@
-# NFM Implementation Roadmap (v7.7)
+# NFM Implementation Roadmap (v7.9)
 
-Rencana pengembangan bertahap NFM dari Alpha hingga Mainnet Launch.
+Rencana pengembangan NFM dengan integrasi **Antigravity Awesome Skills**.
 
-## Fase 1: Core Foundation (The Shard)
+## 1. Development Best Practices (Agentic Framework)
+Proses pembangunan akan menggunakan standar industri berikut:
+- **Security**: Menggunakan `@security-auditor` & `Security Engineer Bundle` untuk setiap commit modul blockchain/keuangan.
+- **Architecture**: Menggunakan `@architecture` & `Senior Architect Bundle` untuk mendetailkan logika sub-mesh.
+- **DevOps**: Menggunakan standar `docker-expert` untuk memastikan node dapat dideploy dengan mudah (One-click Node).
+
+## 2. Fase Pengembangan Terperinci
+
+### Fase 1: Core Foundation (The Shard)
 - [x] L1 Blockchain Skeleton (Rust).
-- [x] NVCoin Tokenomics Integration.
-- [ ] **Anti-Sybil Layer**: Implementasi deteksi IP Jaringan & Device Fingerprinting.
-- [ ] **NFM-ID #1 Genesis**: Setup Soulbound Founder ID.
+- [ ] **Security Audit [v7.9]**: Audit awal skeleton menggunakan `@security-auditor`.
+- [ ] **Node Containerization**: Create Dockerfile untuk distribusi node awal.
 
-## Fase 2: Identity & Security (The Nexus)
-- [ ] **Multi-Factor Auth**: Password, Seed Phrase, & Biometric Verification Pipeline.
-- [ ] **Newcomer Quest Quota**: Aktivasi reward 1.000 NVCoin (Hard-cap 20.000 pendaftar pertama).
-- [ ] **NFM Brain KYC v1**: Integrasi verifikasi identitas biometrik eksternal.
+### Fase 2: Identity & Security (The Nexus)
+- [ ] **MFA Logic**: Verifikasi Biometrik terintegrasi dengan NFM Brain.
+- [ ] **Sybil Defense Architecture**: Deteksi IP & Device menggunakan `@api-design-principles`.
 
-## Fase 3: Economy & Marketplace (The Hub)
-- [ ] **Genesis Coupons (T1-T6)**: Mekanisme claim berdasarkan antrian verifikasi.
-- [ ] **Universal Marketplace**: Lelang @username & Item Boosters.
-- [ ] **Mystery Box Engine**: Penghargaan berbasis Valid Feedback.
+### Fase 3: Economy & Marketplace (The Hub)
+- [ ] **Auction Engine**: Implementasi Anti-Sniping & Escrow.
+- [ ] **Mystery Box System**: Integrasi VRF untuk pengundian item adil.
 
-## Fase 4: Governance & Expansion (The Mesh)
-- [ ] **Founder Admin Panel**: Fitur kontrol ekonomi & Tombol Reset (Dev-Mode).
-- [ ] **Elite Privilege Logic**: Sistem perlindungan slashing bagi investor Legendary/Mythic.
-- [ ] **Public Launch**: Transisi ke Mainnet & Penutupan fitur "Nuclear Reset".
+### Fase 4: Governance & Expansion (The Mesh)
+- [ ] **Founder Dashboard**: Pembuatan Admin Panel dengan "Nuclear Reset" tertanam.
+- [ ] **Elite Shield**: Implementasi logika perlindungan slapping bagi pemegang Mythic.
+- [ ] **Security Hardening**: Final audit menyeluruh sebelum Mainnet.
