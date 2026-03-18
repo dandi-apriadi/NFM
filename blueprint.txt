@@ -1,69 +1,41 @@
 ================================================================================
-NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v2.5 [OVERCLOCK MESH]
+NFM (NEURAL FRAGMENT MESH) - TECHNICAL BLUEPRINT v3.7 [INFRA MESH]
 ================================================================================
-Deskripsi: Sovereign AI-Blockchain Ecosystem dengan Multi-Mode Resource Control, 
-Bootstrap Mitigation, dan Full-Spectrum Hardware Utilization.
+Deskripsi: Sovereign AI-Blockchain Ecosystem dengan Hirarki Infrastruktur Tegas: 
+Dedicated Servers (Backbone) & Mobile Nodes (Supporting Mesh).
 ================================================================================
 
-[STRUKTUR DIREKTORI PROYEK]
+[HIRARKI NODE & REWARD]
 
-NFM_Project/
-├── core/                       # Brain of the Mesh
-│   ├── dsmo_orchestrator/      # [UPDATED] Multi-Mode Load Balancer
-│   │   ├── governor/           # [NEW] Resource Limiter (Quiet/Turbo/Hardcore)
-│   │   └── hybrid_engine/      # Multi-model Support
-│   └── secure_shredder/        # SDS Private Layer
-│
-├── blockchain_node/            # Native L1 NFM Chain
-│   ├── economic_governance/    # Buyback & Reward Scaling
-│   └── identity/               # NFM-ID (Biometric)
-│
-├── client_apps/                # The Adaptive App Suite
-│   ├── nfm_node_runner/        # [UPDATED] Mode Switcher (Quiet to Hardcore)
-│   └── nfm_super_app/          # Universal Interface
-│
-└── config/
-    └── performance_profiles.yaml # [NEW] Thresholds for each mode
-
-================================================================================
-[KOMPONEN KONTROL RESOURCE ADAPTIF]
-
-1. PERFORMANCE MODES (User-Defined)
+1. BACKBONE NODES (Genesis & Pro)
 --------------------------------------------------------------------------------
-Node Runner mendukung 4 profil penggunaan daya:
-- **QUIET**: Menggunakan < 10% resource. Cocok untuk laptop saat bekerja atau HP 
-  di siang hari. Fokus pada stabilitas sistem utama.
-- **BALANCED**: Menggunakan 40-60% resource. Keseimbangan antara reward dan 
-  kenyamanan penggunaan perangkat.
-- **TURBO**: Menggunakan 80-90% resource. Prioritas tinggi untuk NFM, namun tetap 
-  menyisakan sedikit ruang untuk sistem operasi.
-- **HARDCORE**: [MAX] Menggunakan 100% hardware (Semua Core CPU, Full VRAM, 
-  Max NPU). Perangkat didedikasikan sepenuhnya untuk network NFM.
+- **Hardware**: Dedicated Servers, High-End Desktops, GPU Clusters.
+- **Tugas**: Hosting Model AI Full-Scale (LLM), Distributed Training.
+- **Reward**: High Yield (Multiplier 1.5x - 2.0x).
+- **Status**: Tulang punggung operasional jaringan.
 
-2. DYNAMIC GOVERNOR (Mode Orchestration)
+2. AUXILIARY MESH (Lite)
 --------------------------------------------------------------------------------
-- Sistem akan mengatur `thermal throttling` secara otomatis agar perangkat tidak 
-  rusak saat mode Hardcore diaktifkan.
-- Jika suhu melewati batas aman, Governor akan menurunkan mode secara otomatis 
-  dari Hardcore ke Balanced hingga suhu stabil.
-
-3. REWARD SCALING BY MODE
---------------------------------------------------------------------------------
-- Semakin tinggi mode yang dipilih (Turbo/Hardcore), semakin besar bobot reward 
-  yang didapatkan per menit komputasi.
-- Mode Hardcore mendapatkan bonus multiplier tambahan karena menyumbangkan 
-  seluruh potensi hardware secara eksklusif.
+- **Hardware**: Smartphones (Android/iOS), IoT Devices, Low-End Laptops.
+- **Tugas**: Secure Data Sharding (SDS), Multi-Node Verification, Scout Crawling.
+- **Reward**: Passive Income (Base Reward 1.0x).
+- **Status**: Pendukung keamanan dan desentralisasi data.
 
 ================================================================================
-[ALUR KERJA (OVERCLOCK)]
-
-USER SELECT MODE -> GOVERNOR ALLOCATE RESOURCES -> HW MONITORING -> 
-TASK EXECUTION -> REWARD CALCULATION (WITH MODE WEIGHT) -> SYNC.
+[STRUKTUR DIREKTORI & LOGIKA]
+- `core/orchestrator`: Mengutamakan alokasi task berat ke Backbone Nodes.
+- `docs/tokenomics`: Penyesuaian persentil berdasarkan kekuatan hardware real-time.
 
 ================================================================================
-[CATATAN V2.5]
+[ALUR KERJA (INFRASTRUCTURE-BASED)]
 
-- Choice: Memberikan kuasa penuh kepada pemilik perangkat untuk mengatur beban.
-- Power: Mode Hardcore memungkinkan perangkat lama menjadi node yang sangat 
-  produktif untuk jaringan.
+REQUEST AI -> ORCHESTRATOR -> DETECT BACKBONE -> PROCESS LLM -> 
+SEND TO MOBILE MESH -> VALIDATE & SHARD -> RESULT TO USER.
+
+================================================================================
+[CATATAN v3.7]
+
+- Scalability: Menambah ribuan HP memisahkan keamanan, tapi menambah ribuan 
+  server meningkatkan kecerdasan. NFM butuh keduanya.
+- Fair Reward: Pekerja keras (Server) dibayar lebih mahal daripada HP.
 ================================================================================

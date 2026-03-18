@@ -25,13 +25,16 @@ Staking di NFM bukan hanya untuk mendapatkan profit, melainkan fondasi keamanan 
 - Dengan staking, penyerang harus memiliki modal besar (NFM Gold) untuk melakukan serangan. Jika mereka ketahuan curang, modal tersebut akan langsung di- **Slash** (dipotong) dan dibagikan ke node lain. Ini membuat biaya serangan jauh lebih mahal daripada potensi keuntungannya.
 
 ### C. Tier & Pembagian Reward (Dynamic Ranking)
-Karena NFM Gold akan semakin langka, sistem tidak menggunakan jumlah angka tetap (Fixed Amount), melainkan sistem **Ranking Persentil** berdasarkan total Gold yang di-stake di jaringan:
+Reward tidak diberikan murni hanya karena "Online", melainkan berdasarkan **Volume Kerja yang Diselesaikan (Proof of Computation)**:
 
-| Tier | Syarat (Ranking Staker) | Multiplier Reward | Peran Utama |
+| Tier | Syarat (Ranking Staker) | Multiplier Reward (Base) | Peran & Kapasitas Tugas |
 | :--- | :--- | :--- | :--- |
-| **Genesis** | **Top 5%** Teratas | 2.0x | High-performance Cluster, Full Model Hosting. |
-| **Pro** | **Top 20%** Berikutnya | 1.5x | Mid-tier Compute, Parallel Processing. |
-| **Lite** | Sisa Staker / Antrian | 1.0x | Data Fragmentation (SDS) & Connectivity. |
+| **Genesis** | **Top 5%** Teratas | 2.0x | **Server/Desktop High-End**. Fokus: Full Model Hosting. Reward Utama. |
+| **Pro** | **Top 20%** Berikutnya | 1.5x | **Desktop/Laptop Mid-End**. Fokus: Parallel Inference. Reward Menengah. |
+| **Lite** | Sisa Staker / HP | 1.0x | **Mobile (HP) / Perangkat IOT**. Fokus: Data Sharding & Validation. Reward Pendukung (Kecil). |
+
+### D. Formula Reward: Work-Based (Fair Distribution)
+- **FCM (Fair Compute Metric)**: Sistem secara otomatis mendeteksi kapasitas VRAM dan kecepatan Floating Point. Perangkat Mobile (HP) secara teknis tidak akan pernah masuk ke Tier Genesis karena keterbatasan hardware, sehingga alokasi reward HP memang dirancang sebagai "Passive Income" kecil dibanding Server/Desktop yang menjadi tulang punggung (Backbone) jaringan.
 
 **Mengapa menggunakan Persentil?**
 - **Adaptif**: Jika di masa depan 100 Gold sudah sangat mahal, pengguna tetap bisa bersaing masuk ke Tier Pro jika jumlah staking mereka masuk dalam 20% teratas secara global.
@@ -44,5 +47,5 @@ Karena NFM Gold akan semakin langka, sistem tidak menggunakan jumlah angka tetap
 
 ## 4. Keberlanjutan Ekonomi (Stability Strategy)
 Untuk memastikan nilai token tetap naik dan menarik minat orang:
-- **Founder Buyback Program**: Menggunakan sebagian profit dari *Fiat Payment Gateway* (Xendit) untuk melakukan buyback NFM Gold dari pasar secara berkala. Token hasil buyback dimasukkan kembali ke *Recycling Reward Pool*.
+- **Founder Buyback Program**: Menggunakan sebagian profit dari *Off-Chain Fiat Payment Gateway* (Xendit) yang dikelola Founder untuk melakukan buyback NFM Gold dari pasar secara berkala. Token hasil buyback dimasukkan kembali ke *Recycling Reward Pool* yang dikelola protokol.
 - **Utility-First Focus**: Menjamin bahwa NFM Credit memiliki kegunaan nyata (seperti akses ke model AI premium) yang mendorong permintaan konstan terhadap ekosistem.
