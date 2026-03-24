@@ -18,10 +18,18 @@ Welcome to the NFM documentation repository. The `blueprint.txt` file in the roo
 | [`docs/folder_structure.md`](./docs/folder_structure.md) | Explanation of the NFM project **Folder Structure**. |
 | [`docs/reward_simulation.md`](./docs/reward_simulation.md) | **Reward Pool Depression** simulation and Refill mechanisms. |
 
-## Future Development Steps (Roadmap)
-1. **Alpha Phase**: Run the first cluster (1 Laptop + 3 Mobile) using `bootstrap_config.yaml`.
-2. **Native Core Dev**: Begin writing core logic (DSMO & SDS) using Rust for cross-platform performance.
-3. **App Suite Prototype**: Build initial UI for the NFM Super-App (Chat & Wallet).
+## Current Implementation Snapshot (2026-03-24)
+- **Blockchain Core**: Stabilization hardening batch completed for transfer safety, consensus sorting safety, and startup DB recovery fallback.
+- **Security Controls**: `/api/transfer/secure` now follows protected endpoint policy (HMAC check + admin transaction gate + POST rate-limit behavior).
+- **Verification Status**: `87/87` tests passed in `core/blockchain` (including integration tests for secure transfer edge-cases).
+- **Ecosystem Progress**: Node Runner and Block Explorer MVP are active; `super-app`, `web-portal`, `developer-portal`, and `cli` are still pending implementation.
+
+## Near-Term Priorities
+1. **Network Layer**: Implement P2P gossip propagation and dynamic peer discovery.
+2. **App Suite Delivery**: Start phased implementation for `super-app`, `web-portal`, `developer-portal`, and `cli`.
+3. **Security Continuation**: Continue hardening and add broader integration coverage beyond transfer flow.
+
+For detailed progress and phase-level status, refer to [`docs/implementation_roadmap.md`](./docs/implementation_roadmap.md).
 
 ---
 *Created by Antigravity AI for NFM Project Founder.*

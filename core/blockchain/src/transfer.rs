@@ -143,11 +143,9 @@ impl WalletEngine {
                 sender_balance, total_needed, amount, gas_fee));
         }
 
-        // Potong dari pengirim
-        *self.balances.get_mut(from).unwrap() -= total_needed;
-
-        // Tambah ke penerima
-        *self.balances.entry(to.to_string()).or_insert(0.0) += amount;
+        // Mutasi saldo menggunakan helper agar aman jika key sender belum terinisialisasi
+        self.deduct_balance(from, total_needed)?;
+        self.add_balance(to, amount);
 
         // Gas fee masuk ke pool ekonomi (split 60/10/30)
         pool.collect_ai_fee(gas_fee);

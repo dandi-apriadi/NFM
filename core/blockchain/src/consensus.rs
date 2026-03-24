@@ -31,7 +31,7 @@ impl ConsensusEngine {
         self.validators.clear();
         
         for (addr, info) in staking_pool {
-            if info.amount >= self.min_stake_for_validator {
+            if info.amount.is_finite() && info.amount >= self.min_stake_for_validator {
                 self.validators.insert(addr.clone(), Validator {
                     address: addr.clone(),
                     total_stake: info.amount,
@@ -43,7 +43,7 @@ impl ConsensusEngine {
         
         // Sorting berdasarkan stake tertinggi (hanya menyisakan top slots)
         let mut sorted_validators: Vec<_> = self.validators.values().cloned().collect();
-        sorted_validators.sort_by(|a, b| b.total_stake.partial_cmp(&a.total_stake).unwrap());
+        sorted_validators.sort_by(|a, b| b.total_stake.total_cmp(&a.total_stake));
         
         self.validators.clear();
         for v in sorted_validators.into_iter().take(self.max_validator_slots) {

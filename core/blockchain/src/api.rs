@@ -52,8 +52,10 @@ fn verify_admin_signature(secret: &str, url: &str, body: &str, provided_sig: &st
 fn is_protected_endpoint(url: &str) -> bool {
     url.starts_with("/api/admin")
         || url == "/api/nlc"
+        || url == "/api/transfer/secure"
         || url == "/api/staking/deposit"
         || url == "/api/mission/start"
+    || url == "/api/mission/progress"
         || url == "/api/mission/complete"
 }
 
@@ -129,16 +131,20 @@ pub fn start_api_server(state: ApiState, port: u16) {
 
             // --- RATE LIMITING [K-02] ---
             let is_rate_limit_enabled = *state.rate_limit_enabled.lock().unwrap();
-            let is_get_method = method == "GET";
+            let is_limited_method = method == "GET" || method == "POST";
             
-            if is_rate_limit_enabled && is_get_method {
+            if is_rate_limit_enabled && is_limited_method {
                 let client_ip = request.remote_addr()
                     .map(|a| a.ip().to_string())
                     .unwrap_or_else(|| "unknown".to_string());
 
+                let limit = if method == "GET" { MAX_GET_PER_MINUTE } else { MAX_POST_PER_MINUTE };
+
                 if !rate_limiter.check(&client_ip, &method) {
                     let response = tiny_http::Response::from_string(
-                        serde_json::json!({ "error": "Rate limit exceeded (300 req/min). Please slow down." }).to_string()
+                        serde_json::json!({
+                            "error": format!("Rate limit exceeded ({} req/min for {}). Please slow down.", limit, method)
+                        }).to_string()
                     )
                     .with_status_code(429)
                     .with_header(tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap())
@@ -224,10 +230,18 @@ pub fn start_api_server(state: ApiState, port: u16) {
                                 .find(|m| m.id == a.mission_id)
                                 .map(|m| m.work_type.min_duration_secs())
                                 .unwrap_or(5);
+                            let progress_pct = if a.required_units == 0 {
+                                0
+                            } else {
+                                ((a.current_units.saturating_mul(100)) / a.required_units) as u32
+                            };
                             serde_json::json!({
                                 "id": a.mission_id,
                                 "started_at": a.started_at,
-                                "min_duration_secs": min_duration
+                                "min_duration_secs": min_duration,
+                                "current_units": a.current_units,
+                                "required_units": a.required_units,
+                                "progress_pct": progress_pct
                             })
                         })
                         .collect();
@@ -290,6 +304,15 @@ pub fn start_api_server(state: ApiState, port: u16) {
                 ("POST", "/api/transfer/secure") => {
                     let mut content = String::new();
                     request.as_reader().read_to_string(&mut content).ok();
+
+                    // --- AUTH CHECK (POST) [K-01] ---
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+                    if !verify_admin_signature(&state.api_secret, "/api/transfer/secure", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
                     let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
 
                     let from = data["from"].as_str().unwrap_or("").to_string();
@@ -301,6 +324,12 @@ pub fn start_api_server(state: ApiState, port: u16) {
                     if from.is_empty() || to.is_empty() || amount <= 0.0 {
                         (400, "application/json", serde_json::json!({ "error": "Missing or invalid fields: from, to, amount" }).to_string())
                     } else {
+                        // --- ADMIN CHECK [S-04] ---
+                        let admin = state.admin_engine.lock().unwrap();
+                        if let Err(e) = admin.can_transact(&from) {
+                            (403, "application/json", serde_json::json!({ "error": format!("Blocked: {}", e) }).to_string())
+                        } else {
+                            drop(admin);
                         match (hex::decode(&pubkey_hex), hex::decode(&sig_hex)) {
                             (Ok(pk_bytes), Ok(sig_bytes)) => {
                                 // Validate public key & signature via the CryptoWallet module
@@ -337,6 +366,8 @@ pub fn start_api_server(state: ApiState, port: u16) {
                             },
                             _ => (400, "application/json", serde_json::json!({ "error": "Invalid hex encoding for public_key_hex or signature_hex" }).to_string()),
                         }
+                        }
+                    }
                     }
                 },
                 ("POST", "/api/nlc") => {
@@ -736,7 +767,49 @@ pub fn start_api_server(state: ApiState, port: u16) {
                                     "mission_id": mission_id,
                                     "min_duration_secs": min_duration,
                                     "started_at": assignment.started_at,
+                                    "current_units": assignment.current_units,
+                                    "required_units": assignment.required_units,
                                     "message": format!("Mission started. Work for at least {}s before submitting proof.", min_duration)
+                                }).to_string())
+                            },
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string())
+                        }
+                    }
+                },
+                // ======================================================================
+                // MISSION PROGRESS [PHASE 12.1b] — Laporkan progres kerja aktual
+                // ======================================================================
+                ("POST", "/api/mission/progress") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+                    if !verify_admin_signature(&state.api_secret, "/api/mission/progress", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let mission_id = data["id"].as_u64().unwrap_or(0) as u32;
+                        let address = data["address"].as_str().unwrap_or(&state.node_address).to_string();
+                        let units_delta = data["units_delta"].as_u64().unwrap_or(0);
+
+                        let mut missions = state.mission_engine.lock().unwrap();
+                        match missions.report_progress(&address, mission_id, units_delta) {
+                            Ok(assignment) => {
+                                let progress_pct = if assignment.required_units == 0 {
+                                    0
+                                } else {
+                                    ((assignment.current_units.saturating_mul(100)) / assignment.required_units) as u32
+                                };
+
+                                (200, "application/json", serde_json::json!({
+                                    "status": "ok",
+                                    "mission_id": mission_id,
+                                    "current_units": assignment.current_units,
+                                    "required_units": assignment.required_units,
+                                    "progress_pct": progress_pct
                                 }).to_string())
                             },
                             Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string())
@@ -944,6 +1017,125 @@ fn render_dashboard(blocks: usize, fees: f64, burned: f64, node: &str, _port: u1
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::admin::{AdminEngine, FreezeReason};
+    use crate::block::Block;
+    use crate::governance::GovernanceEngine;
+    use crate::mission::MissionEngine;
+    use crate::transfer::{GasFeeCalculator, WalletEngine};
+    use crate::wallet::CryptoWallet;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    fn pick_free_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        listener.local_addr().expect("read local addr").port()
+    }
+
+    fn wait_for_server(port: u16) {
+        for _ in 0..40 {
+            if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        panic!("API test server did not start on port {}", port);
+    }
+
+    fn create_hmac(secret: &str, url: &str, body: &str) -> String {
+        let payload = format!("{}:{}", url, body);
+        let mut hasher = Sha256::new();
+        hasher.update(format!("{}:{}", secret, payload).as_bytes());
+        hex::encode(hasher.finalize())
+    }
+
+    fn send_post(port: u16, path: &str, body: &str, extra_headers: &[String]) -> (u16, String) {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect test server");
+
+        let mut headers = String::new();
+        for h in extra_headers {
+            headers.push_str(h);
+            headers.push_str("\r\n");
+        }
+
+        let request = format!(
+            "POST {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n{}\r\n{}",
+            path,
+            port,
+            body.len(),
+            headers,
+            body
+        );
+
+        stream.write_all(request.as_bytes()).expect("write request");
+        let _ = stream.shutdown(std::net::Shutdown::Write);
+
+        let mut response = String::new();
+        stream.read_to_string(&mut response).expect("read response");
+
+        let status = response
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|code| code.parse::<u16>().ok())
+            .unwrap_or(0);
+
+        let body = response
+            .split("\r\n\r\n")
+            .nth(1)
+            .unwrap_or("")
+            .to_string();
+
+        (status, body)
+    }
+
+    fn start_test_api_server(
+        api_secret: &str,
+        node_address: &str,
+        wallets: WalletEngine,
+        admin_engine: AdminEngine,
+        rate_limit_enabled: bool,
+    ) -> u16 {
+        let (block_tx, _block_rx) = std::sync::mpsc::channel::<String>();
+        let port = pick_free_port();
+
+        let state = ApiState {
+            chain: Arc::new(Mutex::new(Vec::<Block>::new())),
+            node_address: node_address.to_string(),
+            total_fees: Arc::new(Mutex::new(0.0)),
+            total_burned: Arc::new(Mutex::new(0.0)),
+            active_effects: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            mission_engine: Arc::new(Mutex::new(MissionEngine::new())),
+            staking_pool: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            wallets: Arc::new(Mutex::new(wallets)),
+            admin_engine: Arc::new(Mutex::new(admin_engine)),
+            governance_engine: Arc::new(Mutex::new(GovernanceEngine::new())),
+            block_tx,
+            api_secret: api_secret.to_string(),
+            rate_limit_enabled: Arc::new(Mutex::new(rate_limit_enabled)),
+            gas_fee_calculator: Arc::new(Mutex::new(GasFeeCalculator::new())),
+            aliases: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            mempool: Arc::new(Mutex::new(Vec::new())),
+            next_block_timestamp: Arc::new(Mutex::new(0)),
+        };
+
+        start_api_server(state, port);
+        wait_for_server(port);
+        port
+    }
+
+    fn signed_transfer_body(sender: &CryptoWallet, receiver: &str, amount: f64) -> String {
+        let (_msg, signature) = sender.sign_transfer(receiver, amount);
+        serde_json::json!({
+            "from": sender.address,
+            "to": receiver,
+            "amount": amount,
+            "public_key_hex": hex::encode(sender.verifying_key.as_bytes()),
+            "signature_hex": hex::encode(signature.to_bytes())
+        })
+        .to_string()
+    }
 
     #[test]
     fn test_rate_limiter_allows_within_limit() {
@@ -974,6 +1166,16 @@ mod tests {
     }
 
     #[test]
+    fn test_rate_limiter_blocks_excess_post() {
+        let mut limiter = RateLimiter::new();
+        for _ in 0..300 {
+            assert!(limiter.check("192.168.1.1", "POST"));
+        }
+        // Request ke-301 POST harus diblokir
+        assert!(!limiter.check("192.168.1.1", "POST"));
+    }
+
+    #[test]
     fn test_signature_verification() {
         let secret = "test_secret_123";
         let url = "/api/admin/freeze";
@@ -994,12 +1196,94 @@ mod tests {
         assert!(is_protected_endpoint("/api/admin/freeze"));
         assert!(is_protected_endpoint("/api/admin/nuke"));
         assert!(is_protected_endpoint("/api/nlc"));
+        assert!(is_protected_endpoint("/api/transfer/secure"));
         assert!(is_protected_endpoint("/api/staking/deposit"));
+        assert!(is_protected_endpoint("/api/mission/progress"));
         assert!(is_protected_endpoint("/api/mission/complete"));
 
         assert!(!is_protected_endpoint("/"));
         assert!(!is_protected_endpoint("/api/blocks"));
         assert!(!is_protected_endpoint("/api/status"));
         assert!(!is_protected_endpoint("/api/wallets"));
+    }
+
+    #[test]
+    fn test_transfer_secure_rejects_invalid_hmac_signature() {
+        let secret = "test_secret_transfer_invalid";
+        let node_address = "nfm_founder_test";
+        let sender = CryptoWallet::generate();
+        let receiver = CryptoWallet::generate();
+
+        let mut wallets = WalletEngine::new();
+        wallets.set_balance(&sender.address, 100.0);
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = signed_transfer_body(&sender, &receiver.address, 1.0);
+
+        let (status, response_body) = send_post(
+            port,
+            "/api/transfer/secure",
+            &body,
+            &["x-nfm-signature: invalid_sig".to_string()],
+        );
+
+        assert_eq!(status, 403);
+        assert!(response_body.contains("invalid signature"));
+    }
+
+    #[test]
+    fn test_transfer_secure_blocks_frozen_sender() {
+        let secret = "test_secret_transfer_frozen";
+        let node_address = "nfm_founder_test";
+        let sender = CryptoWallet::generate();
+        let receiver = CryptoWallet::generate();
+
+        let mut wallets = WalletEngine::new();
+        wallets.set_balance(&sender.address, 100.0);
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+        admin
+            .freeze_account(node_address, &sender.address, FreezeReason::ComplianceViolation)
+            .expect("freeze sender for test");
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = signed_transfer_body(&sender, &receiver.address, 1.0);
+        let hmac = create_hmac(secret, "/api/transfer/secure", &body);
+
+        let (status, response_body) = send_post(
+            port,
+            "/api/transfer/secure",
+            &body,
+            &[format!("x-nfm-signature: {}", hmac)],
+        );
+
+        assert_eq!(status, 403);
+        assert!(response_body.contains("Blocked"));
+    }
+
+    #[test]
+    fn test_transfer_secure_post_rate_limit_integration() {
+        let secret = "test_secret_transfer_rate_limit";
+        let node_address = "nfm_founder_test";
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, WalletEngine::new(), admin, true);
+
+        // 300 POST pertama masih diproses (akan ditolak auth dengan 403, tapi belum kena 429)
+        for _ in 0..300 {
+            let (status, _) = send_post(port, "/api/transfer/secure", "{}", &[]);
+            assert_eq!(status, 403);
+        }
+
+        // POST ke-301 harus kena rate limit
+        let (status, response_body) = send_post(port, "/api/transfer/secure", "{}", &[]);
+        assert_eq!(status, 429);
+        assert!(response_body.contains("Rate limit exceeded"));
     }
 }

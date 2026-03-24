@@ -15,6 +15,8 @@ pub struct BlockData {
 pub struct NodeRewardInfo {
     pub address: String,
     pub amount: f64,
+    #[serde(default)]
+    pub category: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -376,10 +376,13 @@ function App() {
                             </div>
                             <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               {parsed.rewards && parsed.rewards.length > 0 ? (
-                                parsed.rewards.map((r: { address: string; amount: number }, i: number) => (
+                                parsed.rewards.map((r: { address: string; amount: number; category?: string }, i: number) => (
                                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', padding: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px' }}>
-                                    <span style={{ fontFamily: 'monospace' }}>{r.address}</span>
-                                    <span style={{ color: '#00ff88', fontWeight: 'bold' }}>+{r.amount.toFixed(4)} NVC</span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <span style={{ fontFamily: 'monospace' }}>{r.address}</span>
+                                      {r.category && <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>➤ {r.category}</span>}
+                                    </div>
+                                    <span style={{ color: '#00ff88', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>+{r.amount.toFixed(4)} NVC</span>
                                   </div>
                                 ))
                               ) : (

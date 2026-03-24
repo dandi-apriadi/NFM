@@ -37,6 +37,15 @@ impl WorkType {
             WorkType::ConsensusParticipation { required_rounds } => (*required_rounds as u64) * 5,
         }
     }
+
+    /// Kebutuhan unit kerja aktual untuk misi
+    pub fn required_units(&self) -> u64 {
+        match self {
+            WorkType::AiComputation { required_cycles } => *required_cycles,
+            WorkType::ShardVerification { required_shards } => *required_shards as u64,
+            WorkType::ConsensusParticipation { required_rounds } => *required_rounds as u64,
+        }
+    }
 }
 
 /// Status lifecycle sebuah assignment misi
@@ -60,6 +69,7 @@ pub struct Mission {
     pub description: String,
     pub difficulty: Difficulty,
     pub reward_nvc: f64,
+    pub reward_item: Option<String>,
     pub work_type: WorkType,
 }
 
@@ -85,6 +95,8 @@ pub struct MissionAssignment {
     pub address: String,
     pub status: MissionStatus,
     pub started_at: u64,       // Unix timestamp
+    pub current_units: u64,
+    pub required_units: u64,
     pub proof: Option<WorkProof>,
 }
 
@@ -97,6 +109,8 @@ pub struct MissionEngine {
     /// Work units contributed per address since last epoch block
     /// key = address, value = total NVC earned from missions this epoch
     pub contribution_tracker: HashMap<String, f64>,
+    /// User Inventory tracking won items
+    pub user_inventory: HashMap<String, Vec<String>>,
 }
 
 impl MissionEngine {
@@ -104,27 +118,57 @@ impl MissionEngine {
         let missions = vec![
             Mission {
                 id: 1,
-                name: "Neural Training Alpha".into(),
-                description: "Bantu latih model AI lokal dengan menyumbangkan daya komputasi.".into(),
+                name: "[Awal] The Newcomer".into(),
+                description: "Selesaikan 10 task pertama Anda. Kuota: 20.000 pendaftar pertama.".into(),
                 difficulty: Difficulty::Easy,
-                reward_nvc: 5.0,
-                work_type: WorkType::AiComputation { required_cycles: 5_000 },
+                reward_nvc: 1000.0,
+                reward_item: None,
+                work_type: WorkType::AiComputation { required_cycles: 10_000 },
             },
             Mission {
                 id: 2,
-                name: "Security Audit Mesh".into(),
-                description: "Verifikasi integritas shard yang terfragmentasi di sekitar node Anda.".into(),
-                difficulty: Difficulty::Medium,
-                reward_nvc: 12.5,
-                work_type: WorkType::ShardVerification { required_shards: 3 },
+                name: "[Awal] The First Fragment".into(),
+                description: "Selesaikan komputasi shard pertama Anda.".into(),
+                difficulty: Difficulty::Easy,
+                reward_nvc: 10.0,
+                reward_item: Some("Badge Pioneer".to_string()),
+                work_type: WorkType::ShardVerification { required_shards: 1 },
             },
             Mission {
                 id: 3,
-                name: "Sovereign Consensus".into(),
-                description: "Partisipasi dalam stress-test konsensus antar-peer.".into(),
+                name: "[HARD] Eternal Guardian".into(),
+                description: "Node nonstop 30 hari (dikonversi ke 8640 siklus proof). Reward: Legacy Core!".into(),
+                difficulty: Difficulty::Expert,
+                reward_nvc: 5000.0,
+                reward_item: Some("Legacy Core".to_string()),
+                work_type: WorkType::ConsensusParticipation { required_rounds: 8640 },
+            },
+            Mission {
+                id: 4,
+                name: "Brain: P2P Orchestration & Shard Balancing".into(),
+                description: "Verifikasi integritas shard yang terfragmentasi secara massif.".into(),
+                difficulty: Difficulty::Medium,
+                reward_nvc: 150.0,
+                reward_item: None,
+                work_type: WorkType::ShardVerification { required_shards: 50 },
+            },
+            Mission {
+                id: 5,
+                name: "System Defense: Attack Detection".into(),
+                description: "Identifikasi pola serangan Sybil dengan komputasi AI mendalam.".into(),
                 difficulty: Difficulty::Hard,
-                reward_nvc: 50.0,
-                work_type: WorkType::ConsensusParticipation { required_rounds: 5 },
+                reward_nvc: 300.0,
+                reward_item: None,
+                work_type: WorkType::AiComputation { required_cycles: 50_000 },
+            },
+            Mission {
+                id: 6,
+                name: "PoUW: Dataset Sanitization".into(),
+                description: "Bantu membedakan data internet berkualitas tinggi dari noise/spam.".into(),
+                difficulty: Difficulty::Medium,
+                reward_nvc: 200.0,
+                reward_item: None,
+                work_type: WorkType::AiComputation { required_cycles: 25_000 },
             },
         ];
 
@@ -133,6 +177,7 @@ impl MissionEngine {
             completed_missions: HashMap::new(),
             active_assignments: HashMap::new(),
             contribution_tracker: HashMap::new(),
+            user_inventory: HashMap::new(),
         }
     }
 
@@ -174,6 +219,8 @@ impl MissionEngine {
             address: address.to_string(),
             status: MissionStatus::InProgress,
             started_at: now,
+            current_units: 0,
+            required_units: mission.work_type.required_units(),
             proof: None,
         };
 
@@ -183,6 +230,31 @@ impl MissionEngine {
             address, mission.name, mission.work_type.min_duration_secs());
 
         Ok(assignment)
+    }
+
+    /// STEP 1.5: Laporkan progres kerja aktual
+    pub fn report_progress(&mut self, address: &str, mission_id: u32, units_delta: u64) -> Result<MissionAssignment, String> {
+        if units_delta == 0 {
+            return Err("units_delta harus > 0".into());
+        }
+
+        let key = Self::assignment_key(address, mission_id);
+        let assignment = self.active_assignments.get_mut(&key)
+            .ok_or("Belum memulai misi ini. Gunakan start_mission terlebih dahulu.")?;
+
+        if assignment.status != MissionStatus::InProgress {
+            return Err(format!(
+                "Status misi tidak valid: {:?}. Harus InProgress.",
+                assignment.status
+            ));
+        }
+
+        assignment.current_units = assignment.current_units.saturating_add(units_delta);
+        if assignment.current_units > assignment.required_units {
+            assignment.current_units = assignment.required_units;
+        }
+
+        Ok(assignment.clone())
     }
 
     /// STEP 2: Submit bukti pekerjaan untuk verifikasi
@@ -403,7 +475,7 @@ mod tests {
         let hash = MissionEngine::compute_expected_hash("nfm_lazy", 1, nonce);
         let proof = WorkProof {
             result_hash: hash,
-            cycles_completed: 100, // Butuh 5000, cuma submit 100
+            cycles_completed: 100, // Butuh 10000, cuma submit 100
             started_at: now - 60,
             completed_at: now,
             nonce,
@@ -425,7 +497,7 @@ mod tests {
 
         let proof = WorkProof {
             result_hash: "fakehash1234567890".into(), // Hash palsu
-            cycles_completed: 5000,
+            cycles_completed: 10000,
             started_at: now - 60,
             completed_at: now,
             nonce: 42,
@@ -453,7 +525,7 @@ mod tests {
         let hash = MissionEngine::compute_expected_hash("nfm_worker", 1, nonce);
         let proof = WorkProof {
             result_hash: hash,
-            cycles_completed: 6000, // > 5000 required
+            cycles_completed: 12000, // > 10000 required
             started_at: now - 30,   // 30 detik lalu (> 5s minimum)
             completed_at: now,
             nonce,
@@ -464,7 +536,7 @@ mod tests {
 
         // Step 3: Claim reward
         let reward = engine.claim_reward("nfm_worker", 1).unwrap();
-        assert_eq!(reward, 5.0);
+        assert_eq!(reward, 1000.0);
 
         // Cek sudah masuk completed
         assert!(engine.completed_missions.get("nfm_worker").unwrap().contains(&1));
@@ -483,7 +555,7 @@ mod tests {
         let nonce = 1u64;
         let hash = MissionEngine::compute_expected_hash("nfm_done", 1, nonce);
         engine.submit_proof("nfm_done", 1, WorkProof {
-            result_hash: hash, cycles_completed: 5000,
+            result_hash: hash, cycles_completed: 10000,
             started_at: now - 30, completed_at: now, nonce,
         }).unwrap();
         engine.claim_reward("nfm_done", 1).unwrap();
@@ -494,4 +566,5 @@ mod tests {
         assert!(result.unwrap_err().contains("sudah pernah diselesaikan"));
     }
 }
+
 

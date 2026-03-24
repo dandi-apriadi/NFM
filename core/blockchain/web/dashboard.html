@@ -786,6 +786,7 @@
     <script>
         let nodeAddress = "";
         let completedMissions = [];
+        let missionCatalog = {};
         const API_SECRET = "{{API_SECRET}}";
 
         async function generateSignature(url, bodyStr) {
@@ -849,13 +850,157 @@
         // ======================================================================
         // MISSION SYSTEM: Start -> Work (PoC) -> Submit Proof -> Claim
         // ======================================================================
-        let activeMissions = {}; // Track in-progress missions { id: { started_at, min_duration, intervalId } }
+        let activeMissions = {}; // Track in-progress missions with actual unit progress
+        let missionWorkers = {}; // Per-mission work loop timers
+
+        function getMissionRequirementInfo(mission) {
+            if (!mission || !mission.work_type || typeof mission.work_type !== 'object') {
+                return {
+                    requirementText: 'Unknown requirement',
+                    minDurationSecs: 5,
+                    requiredCycles: 5000
+                };
+            }
+
+            if (mission.work_type.AiComputation) {
+                const required = Number(mission.work_type.AiComputation.required_cycles || 0);
+                return {
+                    requirementText: `Computation: ${required.toLocaleString()} cycles`,
+                    minDurationSecs: Math.max(1, Math.floor(required / 1000)),
+                    requiredCycles: required
+                };
+            }
+
+            if (mission.work_type.ShardVerification) {
+                const required = Number(mission.work_type.ShardVerification.required_shards || 0);
+                return {
+                    requirementText: `Shard Verification: ${required.toLocaleString()} shards`,
+                    minDurationSecs: Math.max(1, required * 2),
+                    requiredCycles: required
+                };
+            }
+
+            if (mission.work_type.ConsensusParticipation) {
+                const required = Number(mission.work_type.ConsensusParticipation.required_rounds || 0);
+                return {
+                    requirementText: `Consensus: ${required.toLocaleString()} rounds`,
+                    minDurationSecs: Math.max(1, required * 5),
+                    requiredCycles: required
+                };
+            }
+
+            return {
+                requirementText: 'Unknown requirement',
+                minDurationSecs: 5,
+                requiredCycles: 5000
+            };
+        }
 
         async function computeWorkHash(address, missionId, nonce) {
             const encoder = new TextEncoder();
             const data = encoder.encode(`nfm_work:${address}:${missionId}:${nonce}`);
             const hashBuffer = await crypto.subtle.digest('SHA-256', data);
             return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function currentProgressPct(mission) {
+            if (!mission || !mission.required_units || mission.required_units <= 0) return 0;
+            return Math.min(100, Math.floor((mission.current_units * 100) / mission.required_units));
+        }
+
+        function isDurationReady(mission) {
+            if (!mission) return false;
+            const now = Math.floor(Date.now() / 1000);
+            return (now - mission.started_at) >= mission.min_duration;
+        }
+
+        function isMissionReady(mission) {
+            if (!mission) return false;
+            return mission.current_units >= mission.required_units && isDurationReady(mission);
+        }
+
+        function stopMissionWorker(id) {
+            if (missionWorkers[id]) {
+                clearInterval(missionWorkers[id]);
+                delete missionWorkers[id];
+            }
+        }
+
+        function ensureMissionWorker(id) {
+            if (missionWorkers[id]) return;
+            missionWorkers[id] = setInterval(() => {
+                runMissionWorkTick(id);
+            }, 1000);
+        }
+
+        async function reportMissionProgress(id, unitsDelta) {
+            const mission = activeMissions[id];
+            if (!mission || unitsDelta <= 0) return;
+
+            const bodyStr = JSON.stringify({
+                id: id,
+                address: nodeAddress,
+                units_delta: unitsDelta
+            });
+
+            const sig = await generateSignature('/api/mission/progress', bodyStr);
+            const res = await fetch('/api/mission/progress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-nfm-signature': sig },
+                body: bodyStr
+            });
+            const data = await res.json();
+            if (data.status === 'ok' && activeMissions[id]) {
+                activeMissions[id].current_units = Number(data.current_units || 0);
+                activeMissions[id].required_units = Number(data.required_units || 1);
+            }
+        }
+
+        async function runMissionWorkTick(id) {
+            const mission = activeMissions[id];
+            if (!mission) {
+                stopMissionWorker(id);
+                return;
+            }
+
+            if (mission.in_flight || mission.current_units >= mission.required_units) {
+                const pctNow = currentProgressPct(mission);
+                if (isMissionReady(mission)) {
+                    updateMissionCard(id, 'ready', mission.min_duration, pctNow);
+                } else {
+                    updateMissionCard(id, 'working', mission.min_duration, pctNow);
+                }
+                return;
+            }
+
+            mission.in_flight = true;
+            try {
+                const remaining = Math.max(0, mission.required_units - mission.current_units);
+                const unitsDelta = Math.min(remaining, 64);
+
+                // Actual work: perform hash computations for each unit.
+                for (let i = 0; i < unitsDelta; i++) {
+                    const nonce = Math.floor(Math.random() * 1_000_000_000);
+                    await computeWorkHash(nodeAddress, id, nonce);
+                }
+
+                await reportMissionProgress(id, unitsDelta);
+
+                const refreshed = activeMissions[id];
+                if (!refreshed) return;
+                const pct = currentProgressPct(refreshed);
+                if (isMissionReady(refreshed)) {
+                    updateMissionCard(id, 'ready', refreshed.min_duration, pct);
+                } else {
+                    updateMissionCard(id, 'working', refreshed.min_duration, pct);
+                }
+            } catch (e) {
+                // Keep silent to avoid toast spam on transient network issues.
+            } finally {
+                if (activeMissions[id]) {
+                    activeMissions[id].in_flight = false;
+                }
+            }
         }
 
         async function startMission(id) {
@@ -869,28 +1014,23 @@
                 });
                 const data = await res.json();
                 if (data.status === 'started') {
-                    showToast(`Mission started! Working for ${data.min_duration_secs}s...`);
+                    showToast(`Mission started! Actual work tracking is now active.`);
                     const startedAt = data.started_at;
                     const minDuration = data.min_duration_secs;
+                    const currentUnits = Number(data.current_units || 0);
+                    const requiredUnits = Number(data.required_units || 1);
 
-                    activeMissions[id] = { started_at: startedAt, min_duration: minDuration, elapsed: 0 };
+                    activeMissions[id] = {
+                        started_at: startedAt,
+                        min_duration: minDuration,
+                        current_units: currentUnits,
+                        required_units: requiredUnits,
+                        in_flight: false
+                    };
 
-                    // Update UI to show progress
                     updateMissionCard(id, 'working', minDuration, 0);
-
-                    // Simulate work progress
-                    const interval = setInterval(() => {
-                        if (!activeMissions[id]) { clearInterval(interval); return; }
-                        activeMissions[id].elapsed++;
-                        const pct = Math.min(100, Math.round((activeMissions[id].elapsed / minDuration) * 100));
-                        updateMissionCard(id, 'working', minDuration, pct);
-
-                        if (activeMissions[id].elapsed >= minDuration) {
-                            clearInterval(interval);
-                            updateMissionCard(id, 'ready', minDuration, 100);
-                        }
-                    }, 1000);
-                    activeMissions[id].intervalId = interval;
+                    ensureMissionWorker(id);
+                    runMissionWorkTick(id);
                 } else {
                     showToast(data.error || 'Failed to start', true);
                 }
@@ -900,16 +1040,22 @@
         async function claimMission(id) {
             const mission = activeMissions[id];
             if (!mission) { showToast('Start the mission first!', true); return; }
-            if (mission.elapsed < mission.min_duration) { showToast('Work is not done yet!', true); return; }
+            if (mission.current_units < mission.required_units) {
+                showToast('Actual work units are not complete yet!', true);
+                return;
+            }
+            if (!isDurationReady(mission)) {
+                showToast('Minimum duration gate is not complete yet!', true);
+                return;
+            }
 
             try {
                 const now = Math.floor(Date.now() / 1000);
                 const nonce = Math.floor(Math.random() * 1000000);
                 const resultHash = await computeWorkHash(nodeAddress, id, nonce);
-
-                // Determine required cycles based on mission type
-                const cyclesMap = { 1: 5000, 2: 3, 3: 5 };
-                const requiredCycles = cyclesMap[id] || 5000;
+                const missionDef = missionCatalog[id];
+                const req = getMissionRequirementInfo(missionDef);
+                const requiredCycles = mission.current_units || req.requiredCycles;
 
                 const bodyStr = JSON.stringify({
                     id: id,
@@ -930,6 +1076,7 @@
                 const data = await res.json();
                 if (data.status === 'success') {
                     showToast(`✓ Proof verified! Awarded ${data.reward} NVC`);
+                    stopMissionWorker(id);
                     delete activeMissions[id];
                     completedMissions.push(id);
                     fetchData();
@@ -994,6 +1141,11 @@
                 const status = await statusRes.json();
                 if (!status || !status.node) return;
 
+                missionCatalog = {};
+                (status.missions || []).forEach(m => {
+                    missionCatalog[m.id] = m;
+                });
+
                 window.baseNodeAddress = status.node;
 
                 // [PHASE 19.3] Account Switching UI Fix
@@ -1029,45 +1181,41 @@
                     completedMissions = status.completed_missions;
                 }
 
-                // [NEW] Sync Active Missions from Backend (Bug Fix: Survive Reload)
+                // Sync active missions from backend using actual work-unit progress.
+                const activeIds = new Set();
                 if (status.active_missions) {
-                    const now = Math.floor(Date.now() / 1000);
                     status.active_missions.forEach(am => {
                         const id = am.id;
-                        // Avoid overwriting if we already have the interval running locally
-                        if (!activeMissions[id] || !activeMissions[id].intervalId) {
-                            const calculatedElapsed = Math.max(0, now - am.started_at);
-                            activeMissions[id] = {
-                                started_at: am.started_at,
-                                min_duration: am.min_duration_secs,
-                                elapsed: calculatedElapsed
-                            };
+                        activeIds.add(id);
 
-                            // Re-start the visual interval if it's not done yet
-                            if (calculatedElapsed < am.min_duration_secs) {
-                                // First render tick before interval
-                                const pct = Math.min(100, Math.round((calculatedElapsed / am.min_duration_secs) * 100));
-                                setTimeout(() => updateMissionCard(id, 'working', am.min_duration_secs, pct), 100);
+                        const previous = activeMissions[id] || {};
+                        activeMissions[id] = {
+                            ...previous,
+                            started_at: am.started_at,
+                            min_duration: am.min_duration_secs,
+                            current_units: Number(am.current_units || 0),
+                            required_units: Number(am.required_units || 1)
+                        };
 
-                                const interval = setInterval(() => {
-                                    if (!activeMissions[id]) { clearInterval(interval); return; }
-                                    activeMissions[id].elapsed++;
-                                    const currentPct = Math.min(100, Math.round((activeMissions[id].elapsed / am.min_duration_secs) * 100));
-                                    updateMissionCard(id, 'working', am.min_duration_secs, currentPct);
+                        ensureMissionWorker(id);
 
-                                    if (activeMissions[id].elapsed >= am.min_duration_secs) {
-                                        clearInterval(interval);
-                                        updateMissionCard(id, 'ready', am.min_duration_secs, 100);
-                                    }
-                                }, 1000);
-                                activeMissions[id].intervalId = interval;
-                            } else {
-                                // Already ready
-                                setTimeout(() => updateMissionCard(id, 'ready', am.min_duration_secs, 100), 100);
-                            }
+                        const pct = currentProgressPct(activeMissions[id]);
+                        if (isMissionReady(activeMissions[id])) {
+                            setTimeout(() => updateMissionCard(id, 'ready', am.min_duration_secs, pct), 100);
+                        } else {
+                            setTimeout(() => updateMissionCard(id, 'working', am.min_duration_secs, pct), 100);
                         }
                     });
                 }
+
+                // Cleanup missions that are no longer active on backend.
+                Object.keys(activeMissions).forEach(key => {
+                    const id = Number(key);
+                    if (!activeIds.has(id)) {
+                        stopMissionWorker(id);
+                        delete activeMissions[id];
+                    }
+                });
 
                 // Update mission buttons
                 // Note: To real show which are completed, we'd need another API field or local tracking
@@ -1079,6 +1227,7 @@
                     card.className = 'mission-card';
                     const isCompleted = completedMissions.includes(m.id);
                     const isActive = activeMissions[m.id];
+                    const req = getMissionRequirementInfo(m);
 
                     let buttonHtml = '';
                     let progressHtml = `<div style="width:100%;height:4px;background:rgba(255,255,255,0.05);border-radius:4px;margin-top:8px;overflow:hidden;"><div id="mission-bar-${m.id}" style="width:0%;height:100%;border-radius:4px;transition:width 0.3s;"></div></div>`;
@@ -1086,12 +1235,15 @@
                     if (isCompleted) {
                         buttonHtml = `<button class="btn-action" disabled style="background:#333;color:#888;">✓ Completed</button>`;
                         progressHtml = `<div style="width:100%;height:4px;background:#00ff88;border-radius:4px;margin-top:8px;"></div>`;
-                    } else if (isActive && isActive.elapsed >= isActive.min_duration) {
+                    } else if (isActive && isMissionReady(isActive)) {
                         buttonHtml = `<button class="btn-action" id="mission-btn-${m.id}" onclick="claimMission(${m.id})" style="background:linear-gradient(45deg, #00ff88, #00cc66);">✓ Claim Reward</button>`;
                         progressHtml = `<div style="width:100%;height:4px;background:rgba(255,255,255,0.05);border-radius:4px;margin-top:8px;overflow:hidden;"><div id="mission-bar-${m.id}" style="width:100%;height:100%;background:#00ff88;border-radius:4px;"></div></div>`;
                     } else if (isActive) {
-                        const pct = Math.min(100, Math.round((isActive.elapsed / isActive.min_duration) * 100));
-                        buttonHtml = `<button class="btn-action" id="mission-btn-${m.id}" disabled style="background:#333;">Working... ${pct}%</button>`;
+                        const pct = currentProgressPct(isActive);
+                        const workDone = isActive.current_units >= isActive.required_units;
+                        const durationDone = isDurationReady(isActive);
+                        const waitingReason = !workDone ? `Working... ${pct}%` : (durationDone ? `Ready to claim` : `Waiting duration gate`);
+                        buttonHtml = `<button class="btn-action" id="mission-btn-${m.id}" disabled style="background:#333;">${waitingReason}</button>`;
                         progressHtml = `<div style="width:100%;height:4px;background:rgba(255,255,255,0.05);border-radius:4px;margin-top:8px;overflow:hidden;"><div id="mission-bar-${m.id}" style="width:${pct}%;height:100%;background:linear-gradient(90deg, var(--accent-blue), var(--accent-purple));border-radius:4px;transition:width 0.3s;"></div></div>`;
                     } else {
                         buttonHtml = `<button class="btn-action" id="mission-btn-${m.id}" onclick="startMission(${m.id})">Start Mission</button>`;
@@ -1100,6 +1252,9 @@
                     card.innerHTML = `
                         <span class="mission-name">${m.name}</span>
                         <p class="mission-desc">${m.description}</p>
+                        <div style="font-size:0.75rem;color:var(--text-dim);margin:4px 0;">Indicator: ${req.requirementText}</div>
+                        <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:6px;">Minimum Duration: ${req.minDurationSecs}s</div>
+                        ${isActive ? `<div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:6px;">Actual Progress: ${Number(isActive.current_units || 0).toLocaleString()} / ${Number(isActive.required_units || 0).toLocaleString()} (${currentProgressPct(isActive)}%)</div>` : ''}
                         <div class="mission-reward">${m.reward_nvc.toFixed(1)} NVC</div>
                         ${progressHtml}
                         ${buttonHtml}

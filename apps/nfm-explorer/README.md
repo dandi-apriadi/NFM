@@ -1,73 +1,53 @@
-# React + TypeScript + Vite
+# NFM Explorer (MVP)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+NFM Explorer adalah frontend monitoring untuk node lokal NFM blockchain.
+Aplikasi ini dibangun dengan React + TypeScript + Vite dan terhubung ke API node Rust di port `3000`.
 
-Currently, two official plugins are available:
+## Fitur MVP
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Menampilkan status node (`/api/status`)
+- Menampilkan daftar blok terbaru (`/api/blocks`)
+- Menampilkan antrean mempool (`/api/mempool`)
+- Wallet lookup sederhana (`/api/wallets`)
+- Auto-refresh data berkala untuk observabilitas real-time
 
-## React Compiler
+## Prasyarat
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Node.js 18+ (disarankan LTS terbaru)
+- npm
+- NFM blockchain API server aktif di `http://127.0.0.1:3000`
 
-## Expanding the ESLint configuration
+## Menjalankan Explorer
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Setelah berjalan, buka:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- `http://localhost:5173`
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Build Produksi
+
+```bash
+npm run build
+npm run preview
 ```
+
+## Kontrak API Saat Ini
+
+Explorer mengandalkan endpoint berikut dari backend blockchain:
+
+- `GET /api/status`
+- `GET /api/blocks`
+- `GET /api/mempool`
+- `GET /api/wallets`
+
+Jika backend tidak aktif atau endpoint berubah, UI akan menampilkan error koneksi.
+
+## Catatan Progress
+
+- Status saat ini: **MVP aktif**
+- Fokus saat ini: stabilisasi dan observabilitas node
+- Next: penyempurnaan UX, filtering block/mempool, dan mode konfigurasi endpoint API

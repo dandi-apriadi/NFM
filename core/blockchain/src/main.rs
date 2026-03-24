@@ -43,9 +43,24 @@ impl Blockchain {
         let mut chain = Vec::new();
 
         if let Some(path) = storage_path {
-            let s = BlockStorage::open(path).expect("Gagal membuka database blockchain");
-            chain = s.load_chain().expect("Gagal memuat chain dari database");
-            storage = Some(s);
+            match BlockStorage::open(path) {
+                Ok(s) => {
+                    match s.load_chain() {
+                        Ok(loaded_chain) => {
+                            chain = loaded_chain;
+                        }
+                        Err(e) => {
+                            println!("[CHAIN][WARN] Gagal memuat chain dari database: {}", e);
+                            println!("[CHAIN][WARN] Menjalankan recovery dengan chain kosong (genesis akan dibuat jika perlu)");
+                        }
+                    }
+                    storage = Some(s);
+                }
+                Err(e) => {
+                    println!("[CHAIN][WARN] Gagal membuka database blockchain: {}", e);
+                    println!("[CHAIN][WARN] Menjalankan node tanpa storage persisten untuk sesi ini");
+                }
+            }
         }
 
         if chain.is_empty() {
@@ -65,7 +80,8 @@ impl Blockchain {
             transactions: vec!["GENESIS_REWARD: @founder (+100 NVC)".to_string()],
             rewards: vec![crate::block::NodeRewardInfo { 
                 address: founder_address.to_string(), 
-                amount: 100.0 
+                amount: 100.0,
+                category: "Genesis Provision".to_string(),
             }],
             economy: crate::block::EconomySummary { 
                 fees_collected: 0.0, 
@@ -129,8 +145,14 @@ fn main() {
     let missions = MissionEngine::new();
     
     // --- WALLET PERSISTENCE [PHASE 18 FIX] ---
-    let wallet_storage = Arc::new(WalletStorage::open("nfm_wallets.db").unwrap());
-    let wallets = Arc::new(Mutex::new(WalletEngine::with_storage(wallet_storage)));
+    let wallets = match WalletStorage::open("nfm_wallets.db") {
+        Ok(storage) => Arc::new(Mutex::new(WalletEngine::with_storage(Arc::new(storage)))),
+        Err(e) => {
+            println!("[WALLET][WARN] Gagal membuka wallet storage: {}", e);
+            println!("[WALLET][WARN] Menjalankan wallet engine in-memory untuk sesi ini");
+            Arc::new(Mutex::new(WalletEngine::new()))
+        }
+    };
     
     let mut consensus = consensus::ConsensusEngine::new();
 
@@ -270,7 +292,7 @@ fn main() {
                  blockchain.chain.clear();
                  let genesis_data = crate::block::BlockData {
                      transactions: vec!["GENESIS_REWARD: @founder (+500 NVC)".to_string()],
-                     rewards: vec![crate::block::NodeRewardInfo { address: founder.address.clone(), amount: 500.0 }],
+                     rewards: vec![crate::block::NodeRewardInfo { address: founder.address.clone(), amount: 500.0, category: "Genesis Provision".to_string() }],
                      economy: crate::block::EconomySummary { fees_collected: 0.0, burned: 0.0, epoch_number: 0 },
                  };
                  let genesis_json = serde_json::to_string(&genesis_data).unwrap_or_default();
@@ -366,6 +388,7 @@ fn main() {
                         node_rewards_info.push(crate::block::NodeRewardInfo {
                             address: addr.clone(),
                             amount: share,
+                            category: "Base Epoch Reward".to_string(),
                         });
                         println!("[REWARD] {} earned {:.4} NVC (contribution: {:.2}/{:.2})", 
                             &addr[..16.min(addr.len())], share, contrib, total_contribution);
@@ -377,6 +400,7 @@ fn main() {
                     node_rewards_info.push(crate::block::NodeRewardInfo {
                         address: founder.address.clone(),
                         amount: epoch_inflation,
+                        category: "Base Epoch Reward".to_string(),
                     });
                     println!("[REWARD] No contributors this epoch. {} NVC to Founder (genesis node).", epoch_inflation);
                 }
@@ -393,21 +417,42 @@ fn main() {
                 node_rewards_info.push(crate::block::NodeRewardInfo {
                     address: founder.address.clone(),
                     amount: total_protocol,
+                    category: "Protocol Growth (Founder & Hub)".to_string(),
                 });
                 println!("[REWARD] Protocol Allocation (Founder 15%, Hub 10%): {:.4} NVC", total_protocol);
                 pool.protocol_growth = 0.0;
             }
 
             // === BONUS POOL DISTRIBUTION (10% System Fees) ===
-            // As Apex Workhorse tracking is pending, we allocate this to Founder's Treasury for future airdrops.
+            // Splits the 10% pool among Legacy Core holders, or Founder Treasury if none
             if pool.bonus_pool > 0.0 {
+                let missions_lock = api_missions.lock().unwrap();
+                let legacy_owners: Vec<String> = missions_lock.user_inventory.iter()
+                    .filter(|(_, items)| items.contains(&"Legacy Core".to_string()))
+                    .map(|(addr, _)| addr.clone())
+                    .collect();
+                
                 let mut wallets = api_wallets.lock().unwrap();
-                wallets.add_balance(&founder.address, pool.bonus_pool); 
-                node_rewards_info.push(crate::block::NodeRewardInfo {
-                    address: founder.address.clone(),
-                    amount: pool.bonus_pool,
-                });
-                println!("[REWARD] Bonus Pool (Legacy Core) reserved to Founder Treasury: {:.4} NVC", pool.bonus_pool);
+                if legacy_owners.is_empty() {
+                    wallets.add_balance(&founder.address, pool.bonus_pool); 
+                    node_rewards_info.push(crate::block::NodeRewardInfo {
+                        address: founder.address.clone(),
+                        amount: pool.bonus_pool,
+                        category: "System Fee Bonus".to_string(),
+                    });
+                    println!("[REWARD] Bonus Pool (Legacy Core) reserved to Founder Treasury: {:.4} NVC", pool.bonus_pool);
+                } else {
+                    let share = pool.bonus_pool / legacy_owners.len() as f64;
+                    for owner in legacy_owners {
+                        wallets.add_balance(&owner, share);
+                        node_rewards_info.push(crate::block::NodeRewardInfo {
+                            address: owner.clone(),
+                            amount: share,
+                            category: "Legacy Core Reward".to_string(),
+                        });
+                        println!("[REWARD] Bonus Pool => @{} received {:.4} NVC (Legacy Core Bonus)", owner, share);
+                    }
+                }
                 pool.bonus_pool = 0.0;
             }
 
