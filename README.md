@@ -32,13 +32,13 @@ NFM aims to solve the "Isolated AI" problem by creating a shared, immutable mesh
 
 ```mermaid
 graph TD
-    A[NFM Native Brain] --> B[Neural Fragment Mesh]
-    B --> C[Blockchain Core (L1)]
-    C --> D[P2P Network]
-    C --> E[In-Mesh Storage]
-    B --> F[AI Engine]
-    F --> G[Curriculum Modules]
-    G --> H[Collective Wisdom]
+    A["NFM Native Brain"] --> B["Neural Fragment Mesh"]
+    B --> C["Blockchain Core (L1)"]
+    C --> D["P2P Network"]
+    C --> E["In-Mesh Storage"]
+    B --> F["AI Engine"]
+    F --> G["Curriculum Modules"]
+    G --> H["Collective Wisdom"]
 ```
 
 ## 🚀 Getting Started
