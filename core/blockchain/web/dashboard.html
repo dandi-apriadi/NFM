@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NFM Alpha Core | Wallet Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             --bg-dark: #05050a;
@@ -17,11 +19,16 @@
             --text-dim: #8888aa;
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Outfit', sans-serif;
             background-color: var(--bg-dark);
-            background-image: 
+            background-image:
                 radial-gradient(circle at 10% 20%, rgba(123, 47, 239, 0.15) 0%, transparent 40%),
                 radial-gradient(circle at 90% 80%, rgba(0, 212, 255, 0.1) 0%, transparent 40%);
             color: var(--text-main);
@@ -76,9 +83,20 @@
         }
 
         @keyframes pulse-kf {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.5); opacity: 0.5; }
-            100% { transform: scale(1); opacity: 1; }
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+
+            50% {
+                transform: scale(1.5);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
 
         /* Grid Layout */
@@ -153,7 +171,7 @@
         }
 
         .mission-card {
-            background: rgba(255,255,255,0.02);
+            background: rgba(255, 255, 255, 0.02);
             border: 1px solid var(--glass-border);
             border-radius: 20px;
             padding: 24px;
@@ -162,9 +180,22 @@
             gap: 12px;
         }
 
-        .mission-name { font-size: 1.1rem; font-weight: 600; color: #fff; }
-        .mission-desc { font-size: 0.85rem; color: var(--text-dim); }
-        .mission-reward { font-size: 1rem; font-weight: 700; color: var(--accent-blue); }
+        .mission-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .mission-desc {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .mission-reward {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
 
         .btn-action {
             background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
@@ -177,9 +208,17 @@
             transition: all 0.2s;
             font-size: 0.9rem;
         }
-        
-        .btn-action:hover { opacity: 0.8; transform: scale(1.02); }
-        .btn-action:disabled { background: #333; cursor: not-allowed; opacity: 0.7; }
+
+        .btn-action:hover {
+            opacity: 0.8;
+            transform: scale(1.02);
+        }
+
+        .btn-action:disabled {
+            background: #333;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
 
         /* Wallet Directory */
         .analytics-panel {
@@ -226,13 +265,19 @@
             align-items: center;
         }
 
-        .wallet-balance { font-weight: 700; color: #fff; }
+        .wallet-balance {
+            font-weight: 700;
+            color: #fff;
+        }
 
         /* History Modal */
         #history-modal {
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(10px);
             display: none;
             justify-content: center;
@@ -243,7 +288,8 @@
         .modal-content {
             background: var(--bg-dark);
             border: 1px solid var(-- glass-border);
-            width: 90%; max-width: 800px;
+            width: 90%;
+            max-width: 800px;
             max-height: 80vh;
             border-radius: 24px;
             padding: 40px;
@@ -254,8 +300,11 @@
         /* Modern Wallet Modal */
         #modern-wallet-modal {
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.15);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.15);
             backdrop-filter: blur(2px);
             display: none;
             justify-content: flex-end;
@@ -264,26 +313,30 @@
             padding: 80px 40px;
             box-sizing: border-box;
         }
+
         .wallet-app-card {
             background: #0f1015;
             border: 1px solid var(--glass-border);
-            width: 90%; max-width: 380px;
+            width: 90%;
+            max-width: 380px;
             border-radius: 24px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 20px rgba(0, 243, 255, 0.1);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 243, 255, 0.1);
         }
+
         .wallet-app-header {
             padding: 20px;
-            background: rgba(255,255,255,0.02);
+            background: rgba(255, 255, 255, 0.02);
             border-bottom: 1px solid var(--glass-border);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
+
         .wallet-account-selector {
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             border: 1px solid var(--glass-border);
             padding: 8px 16px;
             border-radius: 20px;
@@ -295,35 +348,62 @@
             gap: 8px;
             cursor: pointer;
         }
-        .wallet-account-selector:hover { background: rgba(255,255,255,0.05); }
-        .wallet-app-body { padding: 30px 20px; text-align: center; }
+
+        .wallet-account-selector:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .wallet-app-body {
+            padding: 30px 20px;
+            text-align: center;
+        }
+
         .wallet-big-balance {
             font-size: 2.5rem;
             font-weight: 700;
             color: #fff;
             margin-bottom: 24px;
         }
+
         .wallet-toolbar {
             display: flex;
             justify-content: center;
             gap: 20px;
             margin-bottom: 20px;
         }
+
         .wallet-tool-btn {
-            background: rgba(255,255,255,0.03);
+            background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--glass-border);
-            width: 56px; height: 56px;
+            width: 56px;
+            height: 56px;
             border-radius: 50%;
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            cursor: pointer; transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
             color: var(--accent-blue);
         }
-        .wallet-tool-btn:hover { background: var(--accent-blue); color: #000; transform: translateY(-2px); }
-        .wallet-tool-label { font-size: 0.65rem; color: var(--text-dim); margin-top: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;}
-        
+
+        .wallet-tool-btn:hover {
+            background: var(--accent-blue);
+            color: #000;
+            transform: translateY(-2px);
+        }
+
+        .wallet-tool-label {
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            margin-top: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
         .wallet-tab-content {
-            background: rgba(0,0,0,0.3);
+            background: rgba(0, 0, 0, 0.3);
             border-top: 1px solid var(--glass-border);
             padding: 24px;
             display: none;
@@ -332,18 +412,38 @@
             overflow-y: auto;
             text-align: left;
         }
-        .wallet-tab-content.active { display: block; }
-        .wallet-close { color: var(--text-dim); cursor: pointer; font-size: 1.2rem; }
-        .wallet-close:hover { color: #fff; }
+
+        .wallet-tab-content.active {
+            display: block;
+        }
+
+        .wallet-close {
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+
+        .wallet-close:hover {
+            color: #fff;
+        }
+
         .wallet-input {
-            width: 100%; background: rgba(0,0,0,0.5); border: 1px solid var(--glass-border);
-            padding: 12px; border-radius: 12px; color: #fff; font-family: monospace; font-size: 0.85rem; margin-bottom: 12px;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--glass-border);
+            padding: 12px;
+            border-radius: 12px;
+            color: #fff;
+            font-family: monospace;
+            font-size: 0.85rem;
+            margin-bottom: 12px;
             box-sizing: border-box;
         }
 
         .close-modal {
             position: absolute;
-            top: 20px; right: 20px;
+            top: 20px;
+            right: 20px;
             font-size: 2rem;
             color: var(--text-dim);
         }
@@ -366,7 +466,12 @@
         }
 
         /* Blocks List */
-        .block-list { display: flex; flex-direction: column; gap: 10px; }
+        .block-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
         .block-item {
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
@@ -379,18 +484,41 @@
             font-size: 0.85rem;
         }
 
-        footer { margin-top: 80px; text-align: center; font-size: 0.8rem; color: var(--text-dim); padding-bottom: 40px; }
-        
-        #toast {
-            position: fixed; bottom: 24px; right: 24px; padding: 16px 32px; border-radius: 12px;
-            background: #222; color: #fff; display: none; z-index: 3000;
+        footer {
+            margin-top: 80px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            padding-bottom: 40px;
         }
 
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 10px; }
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            padding: 16px 32px;
+            border-radius: 12px;
+            background: #222;
+            color: #fff;
+            display: none;
+            z-index: 3000;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--glass-border);
+            border-radius: 10px;
+        }
     </style>
 </head>
+
 <body>
     <div id="toast"></div>
 
@@ -399,21 +527,27 @@
         <div class="wallet-app-card" onclick="event.stopPropagation()">
             <div class="wallet-app-header">
                 <div class="wallet-account-selector" onclick="switchWalletTab('accounts')">
-                    <div style="width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(45deg, var(--accent-purple), var(--accent-blue));"></div>
+                    <div
+                        style="width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(45deg, var(--accent-purple), var(--accent-blue));">
+                    </div>
                     <span id="modal-active-addr">Account 1</span>
                     <span style="font-size: 0.6rem;">▼</span>
                 </div>
                 <div style="display: flex; gap: 12px; align-items: center;">
-                    <span style="cursor: pointer; color: var(--text-dim);" onclick="copyModalAddress()" title="Copy Address">📋</span>
+                    <span style="cursor: pointer; color: var(--text-dim);" onclick="copyModalAddress()"
+                        title="Copy Address">📋</span>
                     <span class="wallet-close" onclick="closeWalletModal()">&times;</span>
                 </div>
             </div>
 
             <!-- TAB: HOME (BALANCE & ACTIONS) -->
-            <div id="wallet-tab-home" class="wallet-tab-content active" style="text-align: center; border:none; padding-top: 40px; background: transparent;">
-                <div style="color: var(--text-dim); font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">TOTAL BALANCE</div>
-                <div class="wallet-big-balance" id="modal-node-balance">0.00 <span style="font-size: 1rem; color: var(--accent-blue);">NVC</span></div>
-                
+            <div id="wallet-tab-home" class="wallet-tab-content active"
+                style="text-align: center; border:none; padding-top: 40px; background: transparent;">
+                <div style="color: var(--text-dim); font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">TOTAL
+                    BALANCE</div>
+                <div class="wallet-big-balance" id="modal-node-balance">0.00 <span
+                        style="font-size: 1rem; color: var(--accent-blue);">NVC</span></div>
+
                 <div class="wallet-toolbar">
                     <div class="wallet-tool-btn" onclick="switchWalletTab('send')">
                         <span style="font-size: 1.2rem;">↗</span>
@@ -438,25 +572,38 @@
             <div id="wallet-tab-send" class="wallet-tab-content">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
                     <span style="font-weight: 700; color: #fff;">Send NVC</span>
-                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('home')">← Back</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;"
+                        onclick="switchWalletTab('home')">← Back</span>
                 </div>
-                <input id="modal-transfer-to" class="wallet-input" type="text" placeholder="Recipient address (nfm_...)">
-                <input id="modal-transfer-amount" class="wallet-input" type="number" placeholder="Amount (NVC)" min="0.01" step="0.01">
-                <button class="btn-action" onclick="executeModalTransfer()" style="width: 100%; margin-top: 10px; background: linear-gradient(45deg, var(--accent-purple), var(--accent-blue));">Sign & Send</button>
-                <div id="modal-transfer-result" style="display:none; margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 0.8rem;"></div>
+                <input id="modal-transfer-to" class="wallet-input" type="text"
+                    placeholder="Recipient address (nfm_...)">
+                <input id="modal-transfer-amount" class="wallet-input" type="number" placeholder="Amount (NVC)"
+                    min="0.01" step="0.01">
+                <button class="btn-action" onclick="executeModalTransfer()"
+                    style="width: 100%; margin-top: 10px; background: linear-gradient(45deg, var(--accent-purple), var(--accent-blue));">Sign
+                    & Send</button>
+                <div id="modal-transfer-result"
+                    style="display:none; margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 0.8rem;">
+                </div>
             </div>
 
             <!-- TAB: RECEIVE -->
             <div id="wallet-tab-receive" class="wallet-tab-content" style="text-align: center;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
                     <span style="font-weight: 700; color: #fff;">Receive NVC</span>
-                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('home')">← Back</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;"
+                        onclick="switchWalletTab('home')">← Back</span>
                 </div>
-                <div style="background: #fff; padding: 16px; border-radius: 16px; display: inline-block; margin-bottom: 20px;">
+                <div
+                    style="background: #fff; padding: 16px; border-radius: 16px; display: inline-block; margin-bottom: 20px;">
                     <!-- Placeholder QR -->
-                    <div style="width: 150px; height: 150px; background: repeating-linear-gradient(45deg, #000, #000 10px, #fff 10px, #fff 20px);"></div>
+                    <div
+                        style="width: 150px; height: 150px; background: repeating-linear-gradient(45deg, #000, #000 10px, #fff 10px, #fff 20px);">
+                    </div>
                 </div>
-                <div id="modal-receive-addr" style="font-family: monospace; font-size: 0.7rem; color: var(--accent-blue); word-break: break-all; margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.5); border-radius: 8px;">...</div>
+                <div id="modal-receive-addr"
+                    style="font-family: monospace; font-size: 0.7rem; color: var(--accent-blue); word-break: break-all; margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.5); border-radius: 8px;">
+                    ...</div>
                 <button class="btn-action" onclick="copyModalAddress()" style="width: 100%;">Copy Address</button>
             </div>
 
@@ -464,14 +611,18 @@
             <div id="wallet-tab-accounts" class="wallet-tab-content">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
                     <span style="font-weight: 700; color: #fff;">Switch Account</span>
-                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('home')">← Back</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;"
+                        onclick="switchWalletTab('home')">← Back</span>
                 </div>
-                <div id="modal-account-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 180px; overflow-y: auto; margin-bottom: 16px;">
+                <div id="modal-account-list"
+                    style="display: flex; flex-direction: column; gap: 10px; max-height: 180px; overflow-y: auto; margin-bottom: 16px;">
                     <!-- Accounts injected here -->
                 </div>
                 <div style="display: flex; gap: 10px;">
-                    <button class="btn-action" onclick="createWalletFromModal()" style="flex:1; font-size: 0.75rem; background: rgba(255,255,255,0.05);">+ Create</button>
-                    <button class="btn-action" onclick="switchWalletTab('import')" style="flex:1; font-size: 0.75rem; background: rgba(255,255,255,0.05);">↓ Import</button>
+                    <button class="btn-action" onclick="createWalletFromModal()"
+                        style="flex:1; font-size: 0.75rem; background: rgba(255,255,255,0.05);">+ Create</button>
+                    <button class="btn-action" onclick="switchWalletTab('import')"
+                        style="flex:1; font-size: 0.75rem; background: rgba(255,255,255,0.05);">↓ Import</button>
                 </div>
             </div>
 
@@ -479,23 +630,33 @@
             <div id="wallet-tab-import" class="wallet-tab-content">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
                     <span style="font-weight: 700; color: #fff;">Import Account</span>
-                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('accounts')">← Back</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;"
+                        onclick="switchWalletTab('accounts')">← Back</span>
                 </div>
                 <input id="modal-import-pk" class="wallet-input" type="password" placeholder="Paste Private Key (Hex)">
-                <button class="btn-action" onclick="importWalletFromModal()" style="width: 100%; margin-top: 10px;">Import</button>
+                <button class="btn-action" onclick="importWalletFromModal()"
+                    style="width: 100%; margin-top: 10px;">Import</button>
             </div>
 
             <!-- TAB: SETTINGS -->
             <div id="wallet-tab-settings" class="wallet-tab-content">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
                     <span style="font-weight: 700; color: #fff;">Settings</span>
-                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('home')">← Back</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;"
+                        onclick="switchWalletTab('home')">← Back</span>
                 </div>
-                <div style="padding: 16px; background: rgba(255,0,110,0.1); border: 1px solid rgba(255,0,110,0.3); border-radius: 12px; margin-bottom: 16px;">
-                    <div style="color: #ff6b6b; font-weight: 700; font-size: 0.85rem; margin-bottom: 8px;">Reveal Private Key</div>
-                    <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 12px;">Warning: Never disclose this key! Anyone with your private key can steal your assets.</div>
-                    <button class="btn-action" onclick="toggleModalPKReveal()" style="width: 100%; background: transparent; border: 1px solid #ff6b6b; color: #ff6b6b; font-size: 0.8rem;">Hold to Reveal</button>
-                    <div id="modal-pk-reveal" style="display: none; font-family: monospace; font-size: 0.7rem; color: #ff6b6b; word-break: break-all; margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.5); border-radius: 8px;"></div>
+                <div
+                    style="padding: 16px; background: rgba(255,0,110,0.1); border: 1px solid rgba(255,0,110,0.3); border-radius: 12px; margin-bottom: 16px;">
+                    <div style="color: #ff6b6b; font-weight: 700; font-size: 0.85rem; margin-bottom: 8px;">Reveal
+                        Private Key</div>
+                    <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 12px;">Warning: Never
+                        disclose this key! Anyone with your private key can steal your assets.</div>
+                    <button class="btn-action" onclick="toggleModalPKReveal()"
+                        style="width: 100%; background: transparent; border: 1px solid #ff6b6b; color: #ff6b6b; font-size: 0.8rem;">Hold
+                        to Reveal</button>
+                    <div id="modal-pk-reveal"
+                        style="display: none; font-family: monospace; font-size: 0.7rem; color: #ff6b6b; word-break: break-all; margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.5); border-radius: 8px;">
+                    </div>
                 </div>
             </div>
         </div>
@@ -518,11 +679,14 @@
                 <div class="pulse"></div>
                 v0.4.3-ALPHA
             </div>
-            <div id="active-identity" onclick="openWalletModal()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 16px; border-radius: 99px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent-blue); cursor: pointer; transition: all 0.2s;">
+            <div id="active-identity" onclick="openWalletModal()"
+                style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 16px; border-radius: 99px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent-blue); cursor: pointer; transition: all 0.2s;">
                 <span style="color: var(--text-dim); margin-right: 8px;">WALLET:</span>
                 <span id="display-address">Connecting...</span>
             </div>
-            <a href="/founders" id="admin-btn" style="display: none; background: var(--accent-gold, #ffcc00); color: #000; padding: 8px 20px; border-radius: 99px; text-decoration: none; font-weight: 700; font-size: 0.8rem; box-shadow: 0 0 15px rgba(255, 204, 0, 0.4);">FOUNDER ADMIN</a>
+            <a href="/founders" id="admin-btn"
+                style="display: none; background: var(--accent-gold, #ffcc00); color: #000; padding: 8px 20px; border-radius: 99px; text-decoration: none; font-weight: 700; font-size: 0.8rem; box-shadow: 0 0 15px rgba(255, 204, 0, 0.4);">FOUNDER
+                ADMIN</a>
         </header>
 
         <div class="stats-grid">
@@ -541,17 +705,25 @@
         </div>
 
         <!-- NLC Command Bar - Phase 17.1 AI Bridge -->
-        <div class="card" style="margin: 24px 0; padding: 20px; border: 1px solid var(--accent-blue); background: rgba(0, 0, 0, 0.4); box-shadow: 0 0 20px rgba(0, 243, 255, 0.1);">
+        <div class="card"
+            style="margin: 24px 0; padding: 20px; border: 1px solid var(--accent-blue); background: rgba(0, 0, 0, 0.4); box-shadow: 0 0 20px rgba(0, 243, 255, 0.1);">
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-blue); box-shadow: 0 0 8px var(--accent-blue);"></div>
-                <h3 style="margin: 0; font-size: 0.8rem; color: var(--accent-blue); letter-spacing: 1px;">NFM NATURAL LANGUAGE COMMAND (NLC BRIDGE)</h3>
+                <div
+                    style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-blue); box-shadow: 0 0 8px var(--accent-blue);">
+                </div>
+                <h3 style="margin: 0; font-size: 0.8rem; color: var(--accent-blue); letter-spacing: 1px;">NFM NATURAL
+                    LANGUAGE COMMAND (NLC BRIDGE)</h3>
             </div>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="nlc-input" placeholder="Type intent (e.g., 'Stake 1000 NVC' or 'Register identity')..." 
-                       style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); padding: 12px 18px; border-radius: 10px; color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
-                <button onclick="executeNLC()" class="btn-action" style="background: var(--accent-blue); color: #000; padding: 0 24px; border-radius: 10px; font-weight: 700;">EXECUTE</button>
+                <input type="text" id="nlc-input"
+                    placeholder="Type intent (e.g., 'Stake 1000 NVC' or 'Register identity')..."
+                    style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); padding: 12px 18px; border-radius: 10px; color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                <button onclick="executeNLC()" class="btn-action"
+                    style="background: var(--accent-blue); color: #000; padding: 0 24px; border-radius: 10px; font-weight: 700;">EXECUTE</button>
             </div>
-            <div id="nlc-result" style="margin-top: 10px; font-size: 0.7rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; min-height: 1rem;"></div>
+            <div id="nlc-result"
+                style="margin-top: 10px; font-size: 0.7rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; min-height: 1rem;">
+            </div>
         </div>
 
         <div class="layout-split">
@@ -570,13 +742,18 @@
                         </div>
                         <div>
                             <span class="label">Projected Yield</span>
-                            <div class="value" id="projected-yield" style="font-size: 1.5rem; color: #00ff88;">+0.0000</div>
+                            <div class="value" id="projected-yield" style="font-size: 1.5rem; color: #00ff88;">+0.0000
+                            </div>
                         </div>
                     </div>
                     <div style="display: flex; gap: 12px;">
-                        <input type="number" id="stake-input" style="flex-grow: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px; color: #fff;" placeholder="NVC amount...">
+                        <input type="number" id="stake-input"
+                            style="flex-grow: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px; color: #fff;"
+                            placeholder="NVC amount...">
                         <button class="btn-action" onclick="depositStake()">Deposit Stake</button>
-                        <button class="btn-action" onclick="unstake()" style="background: rgba(255, 51, 102, 0.1); border: 1px solid rgba(255, 51, 102, 0.5); color: #ff3366;">Unstake All</button>
+                        <button class="btn-action" onclick="unstake()"
+                            style="background: rgba(255, 51, 102, 0.1); border: 1px solid rgba(255, 51, 102, 0.5); color: #ff3366;">Unstake
+                            All</button>
                     </div>
                 </div>
             </div>
@@ -821,7 +998,7 @@
                 nodeAddress = primaryWallet || status.node;
 
                 document.getElementById('display-address').innerText = nodeAddress.substring(0, 8) + '...' + nodeAddress.substring(nodeAddress.length - 8);
-                
+
                 document.getElementById('block-height').innerText = status.blocks || 0;
                 if (status.total_fees !== undefined) {
                     document.getElementById('total-fees').innerHTML = status.total_fees.toFixed(2) + ' <span class="unit">NVC</span>';
@@ -857,12 +1034,12 @@
                         // Avoid overwriting if we already have the interval running locally
                         if (!activeMissions[id] || !activeMissions[id].intervalId) {
                             const calculatedElapsed = Math.max(0, now - am.started_at);
-                            activeMissions[id] = { 
-                                started_at: am.started_at, 
+                            activeMissions[id] = {
+                                started_at: am.started_at,
                                 min_duration: am.min_duration_secs,
                                 elapsed: calculatedElapsed
                             };
-                            
+
                             // Re-start the visual interval if it's not done yet
                             if (calculatedElapsed < am.min_duration_secs) {
                                 // First render tick before interval
@@ -874,7 +1051,7 @@
                                     activeMissions[id].elapsed++;
                                     const currentPct = Math.min(100, Math.round((activeMissions[id].elapsed / am.min_duration_secs) * 100));
                                     updateMissionCard(id, 'working', am.min_duration_secs, currentPct);
-            
+
                                     if (activeMissions[id].elapsed >= am.min_duration_secs) {
                                         clearInterval(interval);
                                         updateMissionCard(id, 'ready', am.min_duration_secs, 100);
@@ -930,7 +1107,7 @@
                 // Wallets Directory & Active Balance Update
                 const walletsRes = await fetch('/api/wallets');
                 const wallets = await walletsRes.json();
-                
+
                 // Inject real active balance (Fallback to 0 if not exist in Keystore)
                 let activeBalance = wallets[nodeAddress] !== undefined ? wallets[nodeAddress] : 0.00;
                 document.getElementById('node-balance').innerHTML = activeBalance.toFixed(2) + ' <span class="unit">NVC</span>';
@@ -942,7 +1119,7 @@
                         const item = document.createElement('div');
                         item.className = 'wallet-item';
                         item.onclick = () => viewHistory(addr);
-                        
+
                         // Find alias if exists [PHASE 19 UI FIX]
                         let alias = '';
                         if (status.aliases) {
@@ -974,7 +1151,7 @@
                     blocks.slice(-5).reverse().forEach(b => {
                         const item = document.createElement('div');
                         item.className = 'block-item';
-                        
+
                         let dataHtml = b.data;
                         try {
                             const parsed = JSON.parse(b.data);
@@ -982,7 +1159,7 @@
                             const rewardCount = parsed.rewards ? parsed.rewards.length : 0;
                             const fees = parsed.economy ? parsed.economy.fees_collected : 0;
                             const burned = parsed.economy ? parsed.economy.burned : 0;
-                            
+
                             dataHtml = `
                                 <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; width: 100%;">
                                     <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">
@@ -1068,6 +1245,19 @@
             return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
+        function downloadKeyFile(address, pkHex) {
+            const content = `NFM WALLET EXPORT\nAddress: ${address}\nPrivate Key: ${pkHex}\n\nWARNING: Never share this file!`;
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${address.substring(0, 12)}.key`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
         // ================= MODERN WALLET MODAL CONTROLLERS =================
         function openWalletModal() {
             document.getElementById('modern-wallet-modal').style.display = 'flex';
@@ -1084,7 +1274,7 @@
         function switchWalletTab(tabId) {
             document.querySelectorAll('.wallet-tab-content').forEach(el => el.classList.remove('active'));
             document.getElementById('wallet-tab-' + tabId).classList.add('active');
-            
+
             if (tabId === 'accounts') {
                 renderModalAccounts();
             } else if (tabId === 'receive') {
@@ -1104,11 +1294,11 @@
         function renderModalAccounts() {
             const list = document.getElementById('modal-account-list');
             list.innerHTML = '';
-            
+
             let wallets = {};
             const walletsStr = localStorage.getItem('nfm_wallets');
-            try { if (walletsStr) wallets = JSON.parse(walletsStr); } catch(e) {}
-            
+            try { if (walletsStr) wallets = JSON.parse(walletsStr); } catch (e) { }
+
             let accountsToShow = Object.keys(wallets);
             if (window.baseNodeAddress && !accountsToShow.includes(window.baseNodeAddress)) {
                 accountsToShow.unshift(window.baseNodeAddress);
@@ -1118,7 +1308,7 @@
             for (const addr of accountsToShow) {
                 const isActive = addr === nodeAddress;
                 const isBase = addr === window.baseNodeAddress;
-                
+
                 let label = isBase ? "👑 Founder Node" : `Account ${idx}`;
 
                 const el = document.createElement('div');
@@ -1128,7 +1318,7 @@
                 el.innerHTML = `
                     <div style="display:flex; gap:8px; align-items:center;">
                         <div style="width: 12px; height: 12px; border-radius: 50%; background: ${isActive ? 'var(--accent-blue)' : 'var(--text-dim)'};"></div>
-                        ${label} <span style="font-size: 0.65rem; color: var(--text-dim);">${addr.substring(0,8)}...</span>
+                        ${label} <span style="font-size: 0.65rem; color: var(--text-dim);">${addr.substring(0, 8)}...</span>
                     </div>
                 `;
                 el.onclick = () => {
@@ -1156,17 +1346,27 @@
         }
 
         async function createWalletFromModal() {
+            if (!ed25519) return showToast('Crypto core loading...', true);
             try {
-                const res = await fetch('/api/wallet/create', { method: 'POST' });
-                const data = await res.json();
-                if (data.status === 'created') {
-                    const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
-                    wallets[data.address] = data.private_key_hex;
-                    localStorage.setItem('nfm_wallets', JSON.stringify(wallets));
-                    showToast('✓ New account created natively!');
-                    renderModalAccounts();
-                } else showToast('Failed to create', true);
-            } catch(e) { showToast('Network error', true); }
+                // [PHASE 21] Super-Random Client-Side Generation
+                const privKeyBytes = window.crypto.getRandomValues(new Uint8Array(32));
+                const pubKeyBytes = await ed25519.getPublicKeyAsync(privKeyBytes);
+                const pubHashBuf = await crypto.subtle.digest('SHA-256', pubKeyBytes);
+                const pubHashHex = Array.from(new Uint8Array(pubHashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+                const address = `nfm_${pubHashHex.substring(0, 32)}`;
+                const pkHex = bytesToHex(privKeyBytes);
+
+                const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
+                wallets[address] = pkHex;
+                localStorage.setItem('nfm_wallets', JSON.stringify(wallets));
+                
+                showToast('✓ New secure account created & Keyfile downloaded!');
+                downloadKeyFile(address, pkHex);
+                renderModalAccounts();
+            } catch(e) { 
+                console.error(e);
+                showToast('Generation error: ' + e.message, true); 
+            }
         }
 
         async function importWalletFromModal() {
@@ -1178,14 +1378,14 @@
                 const pubHashBuf = await crypto.subtle.digest('SHA-256', pubKeyBytes);
                 const pubHashHex = Array.from(new Uint8Array(pubHashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
                 const address = `nfm_${pubHashHex}`;
-                
+
                 const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
                 wallets[address] = pk;
                 localStorage.setItem('nfm_wallets', JSON.stringify(wallets));
                 showToast('✓ Account imported successfully!');
                 document.getElementById('modal-import-pk').value = '';
                 switchWalletTab('accounts');
-            } catch(e) { showToast('Cryptography mismatch during import', true); }
+            } catch (e) { showToast('Cryptography mismatch during import', true); }
         }
 
         async function executeModalTransfer() {
@@ -1195,7 +1395,7 @@
             const resultDiv = document.getElementById('modal-transfer-result');
 
             if (!to || !amount) return showToast('Incomplete parameters', true);
-            
+
             // Auto retrieve PK from local vault securely
             const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
             const pkHex = wallets[nodeAddress];
@@ -1218,7 +1418,7 @@
                 const privKeyBytes = hexToBytes(pkHex);
                 const pubKeyBytes = await ed25519.getPublicKeyAsync(privKeyBytes);
                 const pubKeyHex = bytesToHex(pubKeyBytes);
-                
+
                 const message = `${nodeAddress}|${to}|${amount.toFixed(8)}`;
                 const msgBytes = new TextEncoder().encode(message);
                 const sigBytes = await ed25519.signAsync(msgBytes, privKeyBytes);
@@ -1249,4 +1449,5 @@
         fetchData();
     </script>
 </body>
+
 </html>

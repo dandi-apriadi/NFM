@@ -62,10 +62,10 @@ impl Blockchain {
 
         println!("[CHAIN] Creating Structured Genesis Block...");
         let genesis_data = crate::block::BlockData {
-            transactions: vec!["GENESIS_REWARD: @founder (+500 NVC)".to_string()],
+            transactions: vec!["GENESIS_REWARD: @founder (+100 NVC)".to_string()],
             rewards: vec![crate::block::NodeRewardInfo { 
                 address: founder_address.to_string(), 
-                amount: 500.0 
+                amount: 100.0 
             }],
             economy: crate::block::EconomySummary { 
                 fees_collected: 0.0, 
@@ -96,6 +96,13 @@ impl Blockchain {
 
     fn get_latest_block(&self) -> &Block {
         self.chain.last().expect("Chain should not be empty")
+    }
+
+    fn get_epoch_reward(&self) -> f64 {
+        let height = self.chain.len() as u32;
+        let halvings = height / 420480;
+        if halvings >= 64 { return 0.0; }
+        100.0 / (2.0f64.powi(halvings as i32))
     }
 }
 
@@ -176,8 +183,8 @@ fn main() {
         println!("\n[INFO] Simulation Mode DISABLED. Starting with a clean real state.");
         let mut w_lock = wallets.lock().unwrap();
         if w_lock.balances.is_empty() {
-            println!("  [DB] Initializing Organic Economy with Genesis Reward (500 NVC to Founder)...");
-            w_lock.set_balance(&founder.address, 500.0);
+            println!("  [DB] Initializing Organic Economy with Genesis Reward (100 NVC to Founder)...");
+            w_lock.set_balance(&founder.address, 100.0);
             // No alice/bob initial balances — only Founder at genesis
         } else {
             println!("  [DB] Loaded persistent wallet state.");
@@ -320,8 +327,9 @@ fn main() {
                 *burn_lock = pool.total_burned;
             }
 
-            // Mint 500 NVC base inflation per block/epoch as per spec
-            pool.reward_pool += 500.0;
+            // [PHASE 21] 100 NVC Base Inflation with Halving Support
+            let base_inflation = blockchain.get_epoch_reward();
+            pool.reward_pool += base_inflation;
             
             let mut active_nodes = std::vec::Vec::new();
             {
@@ -341,7 +349,7 @@ fn main() {
             // === PROOF-OF-CONTRIBUTION REWARD DISTRIBUTION ===
             // Reward is split proportionally based on mission work completed this epoch.
             // Only addresses that completed missions get a share.
-            let epoch_inflation = 500.0_f64 + pool.reward_pool; // Base inflation per epoch + 60% System Fees
+            let epoch_inflation = pool.reward_pool; // Includes base_inflation + 60% System Fees
             pool.reward_pool = 0.0; // Reset after processing
             let mut node_rewards_info = Vec::new();
 
