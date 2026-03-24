@@ -651,9 +651,12 @@
                         Private Key</div>
                     <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 12px;">Warning: Never
                         disclose this key! Anyone with your private key can steal your assets.</div>
-                    <button class="btn-action" onclick="toggleModalPKReveal()"
-                        style="width: 100%; background: transparent; border: 1px solid #ff6b6b; color: #ff6b6b; font-size: 0.8rem;">Hold
-                        to Reveal</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn-action" onclick="toggleModalPKReveal()"
+                            style="flex: 1; background: transparent; border: 1px solid #ff6b6b; color: #ff6b6b; font-size: 0.8rem;">Reveal</button>
+                        <button class="btn-action" onclick="downloadCurrentPK()"
+                            style="flex: 1; background: #ff6b6b; color: #000; border: none; font-size: 0.8rem; font-weight: bold;">Download</button>
+                    </div>
                     <div id="modal-pk-reveal"
                         style="display: none; font-family: monospace; font-size: 0.7rem; color: #ff6b6b; word-break: break-all; margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.5); border-radius: 8px;">
                     </div>
@@ -1332,6 +1335,14 @@
 
         function copyModalAddress() {
             navigator.clipboard.writeText(nodeAddress).then(() => showToast('✓ Address copied!'));
+        }
+
+        function downloadCurrentPK() {
+            const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
+            const pkHex = wallets[nodeAddress];
+            if (!pkHex) return showToast('Private key not found locally', true);
+            downloadKeyFile(nodeAddress, pkHex);
+            showToast('✓ Key file downloaded safely!');
         }
 
         function toggleModalPKReveal() {
