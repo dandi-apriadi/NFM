@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use serde::{Serialize, Deserialize};
 
 /// Konfigurasi konstan untuk Revenue Split
@@ -183,3 +184,4 @@ mod tests {
         assert!(result.is_none(), "Should not distribute when pool is empty");
     }
 }
+

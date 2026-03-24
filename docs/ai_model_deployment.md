@@ -1,4 +1,4 @@
-# NFM AI Model Deployment (Uplink Process)
+ke# NFM AI Model Deployment (Uplink Process)
 
 Mekanisme desentralisasi untuk memasukkan kecerdasan baru ke dalam jaringan NFM.
 

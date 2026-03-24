@@ -1,18 +1,23 @@
-# NVCoin Unified Tokenomics (v7.9.2)
+# NFM Tokenomics Design
 
-## 1. Single-Token System (NVCoin)
-- **Max Supply**: 100.000.000 NVCoin.
+A sustainable circular economy model powered by $NVC (Neural Fragment Mesh Coin).
 
-## 2. Revenue Allocation (The 60/10/30 Split)
-- **60% -> Recycling Reward Pool**: Menjaga emisi validator.
-- **10% -> Bonus Pool**: Hadiah bulanan bagi pemegang Legacy Core.
-- **30% -> Protocol Growth**: 
-    - 15% Founder & Core Team.
-    - 10% Ecosystem Hub Fund.
-    - 5% Deflationary Burn.
+## 1. Token Metrics
+- **Ticker**: $NVC
+- **Total Supply**: Dynamic (Deflationary pressure via Burn + Controlled Inflation via Epoch Rewards).
+- **Decimals**: 8
 
-## 3. Fee Overrides [NEW v7.9]
-- **Founder Privilege**: Diskon **60%** untuk biaya penggunaan AI (Input Fee).
+## 2. Epoch Rewards (Base Inflation)
+Every 5 minutes (One Epoch), the system mints 500 NVC. 
+- **60% Staking Nodes**: Distributed to active validators.
+- **40% Ecosystem Expansion**: Allocated for Hub development and AI training.
+
+## 3. Transaction Fees (Deflationary Loop)
+Every transaction (Transfer, Mission, Staking) incurs a gas fee.
+- **50% Burned**: Permanently removed from circulation.
+- **30% Reward Refill**: Recycled back into the Reward Pool.
+- **20% Foundation**: Operational costs and infrastructure maintenance.
+ Fee).
 - **Apex Privilege**: Diskon **50%** untuk 5 kontributor terbaik.
 - **Genesis Coupons**: Berlaku sistem stacking (T1-T5 + T6).
 

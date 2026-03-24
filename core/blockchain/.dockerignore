@@ -1,0 +1,5 @@
+target/
+nfm_main.db/
+build_errors.txt
+.git
+.gitignore

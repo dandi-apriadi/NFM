@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFM Alpha Core | Wallet Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #05050a;
+            --accent-blue: #00d4ff;
+            --accent-purple: #7b2fef;
+            --accent-pink: #ff006e;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-main: #e0e0ff;
+            --text-dim: #8888aa;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(123, 47, 239, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(0, 212, 255, 0.1) 0%, transparent 40%);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            background: rgba(0, 255, 136, 0.1);
+            color: #00ff88;
+            padding: 8px 16px;
+            border-radius: 99px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            border: 1px solid rgba(0, 255, 136, 0.2);
+        }
+
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background: #00ff88;
+            border-radius: 50%;
+            margin-right: 10px;
+            box-shadow: 0 0 10px #00ff88;
+            animation: pulse-kf 2s infinite;
+        }
+
+        @keyframes pulse-kf {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Grid Layout */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 32px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: rgba(123, 47, 239, 0.3);
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .card.active-node {
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            background: linear-gradient(135deg, rgba(0, 212, 255, 0.05), transparent);
+        }
+
+        .card .label {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .card .value {
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #fff 30%, #8888aa 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .card .unit {
+            font-size: 1rem;
+            color: var(--accent-blue);
+            margin-left: 8px;
+        }
+
+        /* Analytics Layout */
+        .layout-split {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        /* Mission Center */
+        .mission-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .mission-card {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .mission-name { font-size: 1.1rem; font-weight: 600; color: #fff; }
+        .mission-desc { font-size: 0.85rem; color: var(--text-dim); }
+        .mission-reward { font-size: 1rem; font-weight: 700; color: var(--accent-blue); }
+
+        .btn-action {
+            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+            border: none;
+            color: white;
+            padding: 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+        
+        .btn-action:hover { opacity: 0.8; transform: scale(1.02); }
+        .btn-action:disabled { background: #333; cursor: not-allowed; opacity: 0.7; }
+
+        /* Wallet Directory */
+        .analytics-panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 24px;
+            height: 100%;
+        }
+
+        .wallet-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+
+        .wallet-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .wallet-item:hover {
+            border-color: var(--accent-blue);
+            background: rgba(0, 212, 255, 0.05);
+        }
+
+        .wallet-address {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--accent-purple);
+            margin-bottom: 4px;
+        }
+
+        .wallet-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .wallet-balance { font-weight: 700; color: #fff; }
+
+        /* History Modal */
+        #history-modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(10px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background: var(--bg-dark);
+            border: 1px solid var(-- glass-border);
+            width: 90%; max-width: 800px;
+            max-height: 80vh;
+            border-radius: 24px;
+            padding: 40px;
+            position: relative;
+            overflow-y: auto;
+        }
+
+        /* Modern Wallet Modal */
+        #modern-wallet-modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(8px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+        }
+        .wallet-app-card {
+            background: #0f1015;
+            border: 1px solid var(--glass-border);
+            width: 90%; max-width: 380px;
+            border-radius: 24px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5), 0 0 20px rgba(0, 243, 255, 0.1);
+        }
+        .wallet-app-header {
+            padding: 20px;
+            background: rgba(255,255,255,0.02);
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .wallet-account-selector {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--glass-border);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        .wallet-account-selector:hover { background: rgba(255,255,255,0.05); }
+        .wallet-app-body { padding: 30px 20px; text-align: center; }
+        .wallet-big-balance {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 24px;
+        }
+        .wallet-toolbar {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .wallet-tool-btn {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            width: 56px; height: 56px;
+            border-radius: 50%;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.2s;
+            color: var(--accent-blue);
+        }
+        .wallet-tool-btn:hover { background: var(--accent-blue); color: #000; transform: translateY(-2px); }
+        .wallet-tool-label { font-size: 0.65rem; color: var(--text-dim); margin-top: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;}
+        
+        .wallet-tab-content {
+            background: rgba(0,0,0,0.3);
+            border-top: 1px solid var(--glass-border);
+            padding: 24px;
+            display: none;
+            min-height: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .wallet-tab-content.active { display: block; }
+        .wallet-close { color: var(--text-dim); cursor: pointer; font-size: 1.2rem; }
+        .wallet-close:hover { color: #fff; }
+        .wallet-input {
+            width: 100%; background: rgba(0,0,0,0.5); border: 1px solid var(--glass-border);
+            padding: 12px; border-radius: 12px; color: #fff; font-family: monospace; font-size: 0.85rem; margin-bottom: 12px;
+            box-sizing: border-box;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 20px; right: 20px;
+            font-size: 2rem;
+            color: var(--text-dim);
+        }
+
+        /* Section Title */
+        .section-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 40px 0 24px;
+            display: flex;
+            align-items: center;
+        }
+
+        .section-title::after {
+            content: '';
+            flex-grow: 1;
+            height: 1px;
+            background: var(--glass-border);
+            margin-left: 20px;
+        }
+
+        /* Blocks List */
+        .block-list { display: flex; flex-direction: column; gap: 10px; }
+        .block-item {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+        }
+
+        footer { margin-top: 80px; text-align: center; font-size: 0.8rem; color: var(--text-dim); padding-bottom: 40px; }
+        
+        #toast {
+            position: fixed; bottom: 24px; right: 24px; padding: 16px 32px; border-radius: 12px;
+            background: #222; color: #fff; display: none; z-index: 3000;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div id="toast"></div>
+
+    <!-- ================= MODERN WALLET MODAL ================= -->
+    <div id="modern-wallet-modal" onclick="closeWalletModal()">
+        <div class="wallet-app-card" onclick="event.stopPropagation()">
+            <div class="wallet-app-header">
+                <div class="wallet-account-selector" onclick="switchWalletTab('accounts')">
+                    <div style="width: 16px; height: 16px; border-radius: 50%; background: linear-gradient(45deg, var(--accent-purple), var(--accent-blue));"></div>
+                    <span id="modal-active-addr">Account 1</span>
+                    <span style="font-size: 0.6rem;">▼</span>
+                </div>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <span style="cursor: pointer; color: var(--text-dim);" onclick="copyModalAddress()" title="Copy Address">📋</span>
+                    <span class="wallet-close" onclick="closeWalletModal()">&times;</span>
+                </div>
+            </div>
+
+            <!-- TAB: HOME (BALANCE & ACTIONS) -->
+            <div id="wallet-tab-home" class="wallet-tab-content active" style="text-align: center; border:none; padding-top: 40px; background: transparent;">
+                <div style="color: var(--text-dim); font-size: 0.85rem; font-weight: 600; margin-bottom: 8px;">TOTAL BALANCE</div>
+                <div class="wallet-big-balance" id="modal-node-balance">0.00 <span style="font-size: 1rem; color: var(--accent-blue);">NVC</span></div>
+                
+                <div class="wallet-toolbar">
+                    <div class="wallet-tool-btn" onclick="switchWalletTab('send')">
+                        <span style="font-size: 1.2rem;">↗</span>
+                        <div class="wallet-tool-label">Send</div>
+                    </div>
+                    <div class="wallet-tool-btn" onclick="switchWalletTab('receive')">
+                        <span style="font-size: 1.2rem;">↙</span>
+                        <div class="wallet-tool-label">Receive</div>
+                    </div>
+                    <div class="wallet-tool-btn" onclick="switchWalletTab('accounts')">
+                        <span style="font-size: 1.2rem;">👥</span>
+                        <div class="wallet-tool-label">Accounts</div>
+                    </div>
+                    <div class="wallet-tool-btn" onclick="switchWalletTab('settings')">
+                        <span style="font-size: 1.2rem;">⚙️</span>
+                        <div class="wallet-tool-label">Settings</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: SEND -->
+            <div id="wallet-tab-send" class="wallet-tab-content">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
+                    <span style="font-weight: 700; color: #fff;">Send NVC</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('home')">← Back</span>
+                </div>
+                <input id="modal-transfer-to" class="wallet-input" type="text" placeholder="Recipient address (nfm_...)">
+                <input id="modal-transfer-amount" class="wallet-input" type="number" placeholder="Amount (NVC)" min="0.01" step="0.01">
+                <button class="btn-action" onclick="executeModalTransfer()" style="width: 100%; margin-top: 10px; background: linear-gradient(45deg, var(--accent-purple), var(--accent-blue));">Sign & Send</button>
+                <div id="modal-transfer-result" style="display:none; margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 0.8rem;"></div>
+            </div>
+
+            <!-- TAB: RECEIVE -->
+            <div id="wallet-tab-receive" class="wallet-tab-content" style="text-align: center;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
+                    <span style="font-weight: 700; color: #fff;">Receive NVC</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('home')">← Back</span>
+                </div>
+                <div style="background: #fff; padding: 16px; border-radius: 16px; display: inline-block; margin-bottom: 20px;">
+                    <!-- Placeholder QR -->
+                    <div style="width: 150px; height: 150px; background: repeating-linear-gradient(45deg, #000, #000 10px, #fff 10px, #fff 20px);"></div>
+                </div>
+                <div id="modal-receive-addr" style="font-family: monospace; font-size: 0.7rem; color: var(--accent-blue); word-break: break-all; margin-bottom: 16px; padding: 12px; background: rgba(0,0,0,0.5); border-radius: 8px;">...</div>
+                <button class="btn-action" onclick="copyModalAddress()" style="width: 100%;">Copy Address</button>
+            </div>
+
+            <!-- TAB: ACCOUNTS -->
+            <div id="wallet-tab-accounts" class="wallet-tab-content">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
+                    <span style="font-weight: 700; color: #fff;">Switch Account</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('home')">← Back</span>
+                </div>
+                <div id="modal-account-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 180px; overflow-y: auto; margin-bottom: 16px;">
+                    <!-- Accounts injected here -->
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-action" onclick="createWalletFromModal()" style="flex:1; font-size: 0.75rem; background: rgba(255,255,255,0.05);">+ Create</button>
+                    <button class="btn-action" onclick="switchWalletTab('import')" style="flex:1; font-size: 0.75rem; background: rgba(255,255,255,0.05);">↓ Import</button>
+                </div>
+            </div>
+
+            <!-- TAB: IMPORT -->
+            <div id="wallet-tab-import" class="wallet-tab-content">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
+                    <span style="font-weight: 700; color: #fff;">Import Account</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('accounts')">← Back</span>
+                </div>
+                <input id="modal-import-pk" class="wallet-input" type="password" placeholder="Paste Private Key (Hex)">
+                <button class="btn-action" onclick="importWalletFromModal()" style="width: 100%; margin-top: 10px;">Import</button>
+            </div>
+
+            <!-- TAB: SETTINGS -->
+            <div id="wallet-tab-settings" class="wallet-tab-content">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
+                    <span style="font-weight: 700; color: #fff;">Settings</span>
+                    <span style="cursor: pointer; color: var(--text-dim); font-size: 0.8rem;" onclick="switchWalletTab('home')">← Back</span>
+                </div>
+                <div style="padding: 16px; background: rgba(255,0,110,0.1); border: 1px solid rgba(255,0,110,0.3); border-radius: 12px; margin-bottom: 16px;">
+                    <div style="color: #ff6b6b; font-weight: 700; font-size: 0.85rem; margin-bottom: 8px;">Reveal Private Key</div>
+                    <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 12px;">Warning: Never disclose this key! Anyone with your private key can steal your assets.</div>
+                    <button class="btn-action" onclick="toggleModalPKReveal()" style="width: 100%; background: transparent; border: 1px solid #ff6b6b; color: #ff6b6b; font-size: 0.8rem;">Hold to Reveal</button>
+                    <div id="modal-pk-reveal" style="display: none; font-family: monospace; font-size: 0.7rem; color: #ff6b6b; word-break: break-all; margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.5); border-radius: 8px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="history-modal" onclick="closeHistory()">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <span class="close-modal" onclick="closeHistory()">&times;</span>
+            <h2 id="history-title" style="margin-bottom: 24px;">Wallet History</h2>
+            <div id="history-content" class="block-list">
+                <!-- History blocks here -->
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="logo">NVCoin CORE ANALYTICS</div>
+            <div class="status-badge">
+                <div class="pulse"></div>
+                v0.4.3-ALPHA
+            </div>
+            <div id="active-identity" onclick="openWalletModal()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); padding: 8px 16px; border-radius: 99px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent-blue); cursor: pointer; transition: all 0.2s;">
+                <span style="color: var(--text-dim); margin-right: 8px;">WALLET:</span>
+                <span id="display-address">Connecting...</span>
+            </div>
+            <a href="/founders" id="admin-btn" style="display: none; background: var(--accent-gold, #ffcc00); color: #000; padding: 8px 20px; border-radius: 99px; text-decoration: none; font-weight: 700; font-size: 0.8rem; box-shadow: 0 0 15px rgba(255, 204, 0, 0.4);">FOUNDER ADMIN</a>
+        </header>
+
+        <div class="stats-grid">
+            <div class="card active-node">
+                <span class="label">Your Node Balance</span>
+                <div class="value" id="node-balance">... <span class="unit">NVC</span></div>
+            </div>
+            <div class="card">
+                <span class="label">Mainnet Height</span>
+                <div class="value" id="block-height">...</div>
+            </div>
+            <div class="card">
+                <span class="label">Total Ecosystem Fees</span>
+                <div class="value" id="total-fees">... <span class="unit">NVC</span></div>
+            </div>
+        </div>
+
+        <!-- NLC Command Bar - Phase 17.1 AI Bridge -->
+        <div class="card" style="margin: 24px 0; padding: 20px; border: 1px solid var(--accent-blue); background: rgba(0, 0, 0, 0.4); box-shadow: 0 0 20px rgba(0, 243, 255, 0.1);">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-blue); box-shadow: 0 0 8px var(--accent-blue);"></div>
+                <h3 style="margin: 0; font-size: 0.8rem; color: var(--accent-blue); letter-spacing: 1px;">NFM NATURAL LANGUAGE COMMAND (NLC BRIDGE)</h3>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="nlc-input" placeholder="Type intent (e.g., 'Stake 1000 NVC' or 'Register identity')..." 
+                       style="flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); padding: 12px 18px; border-radius: 10px; color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                <button onclick="executeNLC()" class="btn-action" style="background: var(--accent-blue); color: #000; padding: 0 24px; border-radius: 10px; font-weight: 700;">EXECUTE</button>
+            </div>
+            <div id="nlc-result" style="margin-top: 10px; font-size: 0.7rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; min-height: 1rem;"></div>
+        </div>
+
+        <div class="layout-split">
+            <div class="main-content">
+                <div class="section-title">AI Mission Center</div>
+                <div class="mission-grid" id="mission-list">
+                    <!-- Missions here -->
+                </div>
+
+                <div class="section-title">Staking Terminal</div>
+                <div class="card">
+                    <div style="display: flex; gap: 40px; margin-bottom: 24px;">
+                        <div>
+                            <span class="label">Active Stake</span>
+                            <div class="value" style="font-size: 1.5rem;" id="active-stake">0.00</div>
+                        </div>
+                        <div>
+                            <span class="label">Projected Yield</span>
+                            <div class="value" id="projected-yield" style="font-size: 1.5rem; color: #00ff88;">+0.0000</div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <input type="number" id="stake-input" style="flex-grow: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px; color: #fff;" placeholder="NVC amount...">
+                        <button class="btn-action" onclick="depositStake()">Deposit Stake</button>
+                        <button class="btn-action" onclick="unstake()" style="background: rgba(255, 51, 102, 0.1); border: 1px solid rgba(255, 51, 102, 0.5); color: #ff3366;">Unstake All</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="side-panel">
+                <div class="section-title">Wallet Directory</div>
+                <div class="analytics-panel">
+                    <div class="wallet-list" id="wallet-directory">
+                        <!-- Wallets here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section-title">Global Event Stream</div>
+        <div class="block-list" id="recent-blocks">
+            <!-- Blocks here -->
+        </div>
+
+        <!-- WALLET MANAGEMENT MOVED TO TOP RIGHT MODAL UMBRELLA -->
+
+        <footer>
+            Neural Fragment Mesh &copy; 2026 — Sovereign Peer-to-Peer AI Economy
+        </footer>
+    </div>
+
+    <script>
+        let nodeAddress = "";
+        let completedMissions = [];
+        const API_SECRET = "{{API_SECRET}}";
+
+        async function generateSignature(url, bodyStr) {
+            const encoder = new TextEncoder();
+            const payload = API_SECRET + ":" + url + ":" + bodyStr;
+            const dataBuffer = encoder.encode(payload);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function showToast(msg, isError = false) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.background = isError ? '#ff006e' : '#7b2fef';
+            t.style.display = 'block';
+            setTimeout(() => { t.style.display = 'none'; }, 3000);
+        }
+
+        async function depositStake() {
+            const input = document.getElementById('stake-input');
+            const amt = parseFloat(input.value);
+            if (!amt || amt <= 0) return;
+            try {
+                const bodyStr = JSON.stringify({ amount: amt, address: nodeAddress });
+                const sig = await generateSignature('/api/staking/deposit', bodyStr);
+                const res = await fetch('/api/staking/deposit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-nfm-signature': sig },
+                    body: bodyStr
+                });
+                if (res.ok) {
+                    showToast(`Stake intent queued in mempool (${amt} NVC)`);
+                    input.value = '';
+                    fetchData();
+                } else {
+                    const text = await res.json();
+                    showToast(text.error, true);
+                }
+            } catch (e) { showToast("Network error", true); }
+        }
+
+        async function unstake() {
+            try {
+                const bodyStr = JSON.stringify({ address: nodeAddress });
+                const sig = await generateSignature('/api/staking/withdraw', bodyStr);
+                const res = await fetch('/api/staking/withdraw', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-nfm-signature': sig },
+                    body: bodyStr
+                });
+                if (res.ok) {
+                    showToast(`Unstake request queued in mempool!`);
+                    fetchData();
+                } else {
+                    const data = await res.json();
+                    showToast(data.error || "Unstake failed", true);
+                }
+            } catch (e) { showToast("Network error", true); }
+        }
+
+        // ======================================================================
+        // MISSION SYSTEM: Start -> Work (PoC) -> Submit Proof -> Claim
+        // ======================================================================
+        let activeMissions = {}; // Track in-progress missions { id: { started_at, min_duration, intervalId } }
+
+        async function computeWorkHash(address, missionId, nonce) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(`nfm_work:${address}:${missionId}:${nonce}`);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function startMission(id) {
+            try {
+                const bodyStr = JSON.stringify({ id: id, address: nodeAddress });
+                const sig = await generateSignature('/api/mission/start', bodyStr);
+                const res = await fetch('/api/mission/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-nfm-signature': sig },
+                    body: bodyStr
+                });
+                const data = await res.json();
+                if (data.status === 'started') {
+                    showToast(`Mission started! Working for ${data.min_duration_secs}s...`);
+                    const startedAt = data.started_at;
+                    const minDuration = data.min_duration_secs;
+
+                    activeMissions[id] = { started_at: startedAt, min_duration: minDuration, elapsed: 0 };
+
+                    // Update UI to show progress
+                    updateMissionCard(id, 'working', minDuration, 0);
+
+                    // Simulate work progress
+                    const interval = setInterval(() => {
+                        if (!activeMissions[id]) { clearInterval(interval); return; }
+                        activeMissions[id].elapsed++;
+                        const pct = Math.min(100, Math.round((activeMissions[id].elapsed / minDuration) * 100));
+                        updateMissionCard(id, 'working', minDuration, pct);
+
+                        if (activeMissions[id].elapsed >= minDuration) {
+                            clearInterval(interval);
+                            updateMissionCard(id, 'ready', minDuration, 100);
+                        }
+                    }, 1000);
+                    activeMissions[id].intervalId = interval;
+                } else {
+                    showToast(data.error || 'Failed to start', true);
+                }
+            } catch (e) { showToast('Network error', true); }
+        }
+
+        async function claimMission(id) {
+            const mission = activeMissions[id];
+            if (!mission) { showToast('Start the mission first!', true); return; }
+            if (mission.elapsed < mission.min_duration) { showToast('Work is not done yet!', true); return; }
+
+            try {
+                const now = Math.floor(Date.now() / 1000);
+                const nonce = Math.floor(Math.random() * 1000000);
+                const resultHash = await computeWorkHash(nodeAddress, id, nonce);
+
+                // Determine required cycles based on mission type
+                const cyclesMap = { 1: 5000, 2: 3, 3: 5 };
+                const requiredCycles = cyclesMap[id] || 5000;
+
+                const bodyStr = JSON.stringify({
+                    id: id,
+                    address: nodeAddress,
+                    nonce: nonce,
+                    cycles_completed: requiredCycles,
+                    started_at: mission.started_at,
+                    completed_at: now,
+                    result_hash: resultHash
+                });
+
+                const sig = await generateSignature('/api/mission/complete', bodyStr);
+                const res = await fetch('/api/mission/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-nfm-signature': sig },
+                    body: bodyStr
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    showToast(`✓ Proof verified! Awarded ${data.reward} NVC`);
+                    delete activeMissions[id];
+                    completedMissions.push(id);
+                    fetchData();
+                } else {
+                    showToast(data.error || 'Verification failed', true);
+                }
+            } catch (e) { showToast('Network error', true); }
+        }
+
+        function updateMissionCard(id, state, duration, pct) {
+            const btn = document.getElementById(`mission-btn-${id}`);
+            const bar = document.getElementById(`mission-bar-${id}`);
+            if (!btn || !bar) return;
+
+            if (state === 'working') {
+                btn.disabled = true;
+                btn.innerText = `Working... ${pct}%`;
+                btn.style.background = '#333';
+                bar.style.width = pct + '%';
+                bar.style.background = 'linear-gradient(90deg, var(--accent-blue), var(--accent-purple))';
+            } else if (state === 'ready') {
+                btn.disabled = false;
+                btn.innerText = '✓ Claim Reward';
+                btn.style.background = 'linear-gradient(45deg, #00ff88, #00cc66)';
+                btn.onclick = () => claimMission(id);
+                bar.style.width = '100%';
+                bar.style.background = '#00ff88';
+            }
+        }
+
+        async function viewHistory(address) {
+            document.getElementById('history-title').innerText = `History for ${address.substring(0, 16)}...`;
+            document.getElementById('history-content').innerHTML = "Loading history...";
+            document.getElementById('history-modal').style.display = 'flex';
+
+            try {
+                const res = await fetch(`/api/wallet/history?address=${address}`);
+                const data = await res.json();
+                const container = document.getElementById('history-content');
+                container.innerHTML = '';
+                if (data.length === 0) container.innerHTML = "No on-chain events found for this wallet.";
+                data.reverse().forEach(b => {
+                    const item = document.createElement('div');
+                    item.className = 'block-item';
+                    item.innerHTML = `<span>#${b.index}</span> <span style="font-size: 0.75rem; color: var(--text-dim);">${b.data}</span>`;
+                    container.appendChild(item);
+                });
+            } catch (e) { showToast("Could not load history", true); }
+        }
+
+        function closeHistory() {
+            document.getElementById('history-modal').style.display = 'none';
+        }
+
+        async function fetchData() {
+            try {
+                const statusRes = await fetch('/api/status');
+                if (statusRes.status === 429) {
+                    console.warn("Rate limited by node API");
+                    return;
+                }
+                const status = await statusRes.json();
+                if (!status || !status.node) return;
+
+                window.baseNodeAddress = status.node;
+
+                // [PHASE 19.3] Account Switching UI Fix
+                const primaryWallet = localStorage.getItem('nfm_primary_wallet');
+                nodeAddress = primaryWallet || status.node;
+
+                document.getElementById('display-address').innerText = nodeAddress.substring(0, 8) + '...' + nodeAddress.substring(nodeAddress.length - 8);
+                
+                document.getElementById('block-height').innerText = status.blocks || 0;
+                if (status.total_fees !== undefined) {
+                    document.getElementById('total-fees').innerHTML = status.total_fees.toFixed(2) + ' <span class="unit">NVC</span>';
+                }
+
+                // Founder detection (still check the underlying node identity for permissions)
+                if (status.node.includes('924a2b60') || status.node.includes('nfm_2d54710a')) {
+                    document.getElementById('admin-btn').style.display = 'block';
+                }
+
+                // Staking logic targeted at active identity
+                const nodeStaking = status.staking ? status.staking[nodeAddress] : null;
+                if (nodeStaking) {
+                    document.getElementById('active-stake').innerText = nodeStaking.amount.toFixed(2);
+                    const elapsed = status.blocks - nodeStaking.last_claim_block;
+                    const yieldAmt = nodeStaking.amount * 0.0001 * elapsed;
+                    document.getElementById('projected-yield').innerText = '+' + yieldAmt.toFixed(4);
+                } else {
+                    document.getElementById('active-stake').innerText = "0.00";
+                    document.getElementById('projected-yield').innerText = "+0.0000";
+                }
+
+                // [PHASE 21] Sync Completed Missions from Backend
+                if (status.completed_missions) {
+                    completedMissions = status.completed_missions;
+                }
+
+                // [NEW] Sync Active Missions from Backend (Bug Fix: Survive Reload)
+                if (status.active_missions) {
+                    const now = Math.floor(Date.now() / 1000);
+                    status.active_missions.forEach(am => {
+                        const id = am.id;
+                        // Avoid overwriting if we already have the interval running locally
+                        if (!activeMissions[id] || !activeMissions[id].intervalId) {
+                            const calculatedElapsed = Math.max(0, now - am.started_at);
+                            activeMissions[id] = { 
+                                started_at: am.started_at, 
+                                min_duration: am.min_duration_secs,
+                                elapsed: calculatedElapsed
+                            };
+                            
+                            // Re-start the visual interval if it's not done yet
+                            if (calculatedElapsed < am.min_duration_secs) {
+                                // First render tick before interval
+                                const pct = Math.min(100, Math.round((calculatedElapsed / am.min_duration_secs) * 100));
+                                setTimeout(() => updateMissionCard(id, 'working', am.min_duration_secs, pct), 100);
+
+                                const interval = setInterval(() => {
+                                    if (!activeMissions[id]) { clearInterval(interval); return; }
+                                    activeMissions[id].elapsed++;
+                                    const currentPct = Math.min(100, Math.round((activeMissions[id].elapsed / am.min_duration_secs) * 100));
+                                    updateMissionCard(id, 'working', am.min_duration_secs, currentPct);
+            
+                                    if (activeMissions[id].elapsed >= am.min_duration_secs) {
+                                        clearInterval(interval);
+                                        updateMissionCard(id, 'ready', am.min_duration_secs, 100);
+                                    }
+                                }, 1000);
+                                activeMissions[id].intervalId = interval;
+                            } else {
+                                // Already ready
+                                setTimeout(() => updateMissionCard(id, 'ready', am.min_duration_secs, 100), 100);
+                            }
+                        }
+                    });
+                }
+
+                // Update mission buttons
+                // Note: To real show which are completed, we'd need another API field or local tracking
+                // For now we just refresh mission list
+                const missionList = document.getElementById('mission-list');
+                missionList.innerHTML = '';
+                status.missions.forEach(m => {
+                    const card = document.createElement('div');
+                    card.className = 'mission-card';
+                    const isCompleted = completedMissions.includes(m.id);
+                    const isActive = activeMissions[m.id];
+
+                    let buttonHtml = '';
+                    let progressHtml = `<div style="width:100%;height:4px;background:rgba(255,255,255,0.05);border-radius:4px;margin-top:8px;overflow:hidden;"><div id="mission-bar-${m.id}" style="width:0%;height:100%;border-radius:4px;transition:width 0.3s;"></div></div>`;
+
+                    if (isCompleted) {
+                        buttonHtml = `<button class="btn-action" disabled style="background:#333;color:#888;">✓ Completed</button>`;
+                        progressHtml = `<div style="width:100%;height:4px;background:#00ff88;border-radius:4px;margin-top:8px;"></div>`;
+                    } else if (isActive && isActive.elapsed >= isActive.min_duration) {
+                        buttonHtml = `<button class="btn-action" id="mission-btn-${m.id}" onclick="claimMission(${m.id})" style="background:linear-gradient(45deg, #00ff88, #00cc66);">✓ Claim Reward</button>`;
+                        progressHtml = `<div style="width:100%;height:4px;background:rgba(255,255,255,0.05);border-radius:4px;margin-top:8px;overflow:hidden;"><div id="mission-bar-${m.id}" style="width:100%;height:100%;background:#00ff88;border-radius:4px;"></div></div>`;
+                    } else if (isActive) {
+                        const pct = Math.min(100, Math.round((isActive.elapsed / isActive.min_duration) * 100));
+                        buttonHtml = `<button class="btn-action" id="mission-btn-${m.id}" disabled style="background:#333;">Working... ${pct}%</button>`;
+                        progressHtml = `<div style="width:100%;height:4px;background:rgba(255,255,255,0.05);border-radius:4px;margin-top:8px;overflow:hidden;"><div id="mission-bar-${m.id}" style="width:${pct}%;height:100%;background:linear-gradient(90deg, var(--accent-blue), var(--accent-purple));border-radius:4px;transition:width 0.3s;"></div></div>`;
+                    } else {
+                        buttonHtml = `<button class="btn-action" id="mission-btn-${m.id}" onclick="startMission(${m.id})">Start Mission</button>`;
+                    }
+
+                    card.innerHTML = `
+                        <span class="mission-name">${m.name}</span>
+                        <p class="mission-desc">${m.description}</p>
+                        <div class="mission-reward">${m.reward_nvc.toFixed(1)} NVC</div>
+                        ${progressHtml}
+                        ${buttonHtml}
+                    `;
+                    missionList.appendChild(card);
+                });
+
+                // Wallets Directory & Active Balance Update
+                const walletsRes = await fetch('/api/wallets');
+                const wallets = await walletsRes.json();
+                
+                // Inject real active balance (Fallback to 0 if not exist in Keystore)
+                let activeBalance = wallets[nodeAddress] !== undefined ? wallets[nodeAddress] : 0.00;
+                document.getElementById('node-balance').innerHTML = activeBalance.toFixed(2) + ' <span class="unit">NVC</span>';
+
+                const directory = document.getElementById('wallet-directory');
+                if (directory) {
+                    directory.innerHTML = '';
+                    Object.entries(wallets).forEach(([addr, bal]) => {
+                        const item = document.createElement('div');
+                        item.className = 'wallet-item';
+                        item.onclick = () => viewHistory(addr);
+                        
+                        // Find alias if exists [PHASE 19 UI FIX]
+                        let alias = '';
+                        if (status.aliases) {
+                            for (const [name, address] of Object.entries(status.aliases)) {
+                                if (address === addr) {
+                                    alias = `<span style="color: var(--accent-cyan); font-weight: bold;">${name}</span> `;
+                                    break;
+                                }
+                            }
+                        }
+
+                        item.innerHTML = `
+                            <div class="wallet-address">${alias}${addr}</div>
+                            <div class="wallet-info">
+                                <span style="font-size: 0.7rem; color: var(--text-dim);">${addr === nodeAddress ? 'ACTIVE' : (addr === status.node ? 'BASE NODE' : 'REGISTERED')}</span>
+                                <span class="wallet-balance">${bal.toFixed(2)} NVC</span>
+                            </div>
+                        `;
+                        directory.appendChild(item);
+                    });
+                }
+
+                // Recent Blocks
+                const blocksRes = await fetch('/api/blocks');
+                const blocks = await blocksRes.json();
+                const globalBlocks = document.getElementById('recent-blocks');
+                if (globalBlocks && Array.isArray(blocks)) {
+                    globalBlocks.innerHTML = '';
+                    blocks.slice(-5).reverse().forEach(b => {
+                        const item = document.createElement('div');
+                        item.className = 'block-item';
+                        
+                        let dataHtml = b.data;
+                        try {
+                            const parsed = JSON.parse(b.data);
+                            const txCount = parsed.transactions ? parsed.transactions.length : 0;
+                            const rewardCount = parsed.rewards ? parsed.rewards.length : 0;
+                            const fees = parsed.economy ? parsed.economy.fees_collected : 0;
+                            const burned = parsed.economy ? parsed.economy.burned : 0;
+                            
+                            dataHtml = `
+                                <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; width: 100%;">
+                                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">
+                                        <span style="color: var(--accent-blue);">TXs: ${txCount}</span>
+                                        <span style="color: var(--accent-gold);">REWARDS: ${rewardCount}</span>
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 4px;">
+                                        Fees: ${fees.toFixed(2)} NVC | Burned: ${burned.toFixed(2)} NVC
+                                    </div>
+                                </div>
+                            `;
+                        } catch (e) {
+                            // Fallback for legacy blocks
+                            dataHtml = `<div style="font-size: 0.8rem; opacity: 0.7;">${b.data || 'Epoch Heartbeat'}</div>`;
+                        }
+
+                        item.innerHTML = `
+                            <div style="width: 100%;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <span style="color: var(--accent-purple); font-weight: bold;">BLOCK #${b.index}</span>
+                                    <span style="font-size: 0.7rem; color: var(--text-dim);">${(b.hash || '').substring(0, 16)}...</span>
+                                </div>
+                                ${dataHtml}
+                            </div>
+                        `;
+                        globalBlocks.appendChild(item);
+                    });
+                }
+
+            } catch (e) { console.error("Sync error:", e); }
+        }
+
+        async function executeNLC() {
+            const input = document.getElementById('nlc-input').value.trim();
+            const resultDiv = document.getElementById('nlc-result');
+            if (!input) return;
+
+            resultDiv.innerText = "> PARSING INTENT...";
+            try {
+                const bodyStr = JSON.stringify({ input: input, address: nodeAddress });
+                const sig = await generateSignature('/api/nlc', bodyStr);
+                const res = await fetch('/api/nlc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-nfm-signature': sig },
+                    body: bodyStr
+                });
+                const data = await res.json();
+                if (data && data.status === 'success') {
+                    resultDiv.innerHTML = `<span style="color: var(--accent-blue)">✓</span> EXECUTED: ${data.message}`;
+                    document.getElementById('nlc-input').value = '';
+                    fetchData();
+                } else {
+                    resultDiv.innerHTML = `<span style="color: #ff3366">✗</span> ERROR: ${data?.error || 'Unknown error'}`;
+                }
+            } catch (e) {
+                resultDiv.innerText = "> BRIDGE COMMUNICATION ERROR";
+            }
+        }
+
+        // ===================== NOBLE ED25519 WALLET FUNCTIONS =====================
+        // Load @noble/ed25519 as an ES module for client-side signing
+        let ed25519;
+        (async () => {
+            try {
+                const mod = await import('https://esm.run/@noble/ed25519');
+                ed25519 = mod;
+            } catch (e) {
+                console.warn('noble/ed25519 could not load. Secure transfer may not work offline.', e);
+            }
+        })();
+
+        // Helper: convert hex string to Uint8Array
+        function hexToBytes(hex) {
+            const bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < hex.length; i += 2) {
+                bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+            }
+            return bytes;
+        }
+
+        // Helper: convert Uint8Array to hex
+        function bytesToHex(bytes) {
+            return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // ================= MODERN WALLET MODAL CONTROLLERS =================
+        function openWalletModal() {
+            document.getElementById('modern-wallet-modal').style.display = 'flex';
+            switchWalletTab('home');
+            refreshWalletModalStats();
+        }
+
+        function closeWalletModal() {
+            document.getElementById('modern-wallet-modal').style.display = 'none';
+            document.getElementById('modal-pk-reveal').style.display = 'none';
+            document.getElementById('modal-transfer-result').style.display = 'none';
+        }
+
+        function switchWalletTab(tabId) {
+            document.querySelectorAll('.wallet-tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById('wallet-tab-' + tabId).classList.add('active');
+            
+            if (tabId === 'accounts') {
+                renderModalAccounts();
+            } else if (tabId === 'receive') {
+                document.getElementById('modal-receive-addr').innerText = nodeAddress;
+            } else if (tabId === 'settings') {
+                document.getElementById('modal-pk-reveal').style.display = 'none';
+            }
+        }
+
+        function refreshWalletModalStats() {
+            document.getElementById('modal-active-addr').innerText = nodeAddress.substring(0, 8) + '...';
+            const balText = document.getElementById('node-balance').innerText;
+            const floatBal = parseFloat(balText) || 0.0;
+            document.getElementById('modal-node-balance').innerHTML = `${floatBal.toFixed(2)} <span style="font-size: 1rem; color: var(--accent-blue);">NVC</span>`;
+        }
+
+        function renderModalAccounts() {
+            const list = document.getElementById('modal-account-list');
+            list.innerHTML = '';
+            
+            let wallets = {};
+            const walletsStr = localStorage.getItem('nfm_wallets');
+            try { if (walletsStr) wallets = JSON.parse(walletsStr); } catch(e) {}
+            
+            let accountsToShow = Object.keys(wallets);
+            if (window.baseNodeAddress && !accountsToShow.includes(window.baseNodeAddress)) {
+                accountsToShow.unshift(window.baseNodeAddress);
+            }
+
+            let idx = 1;
+            for (const addr of accountsToShow) {
+                const isActive = addr === nodeAddress;
+                const isBase = addr === window.baseNodeAddress;
+                
+                let label = isBase ? "👑 Founder Node" : `Account ${idx}`;
+
+                const el = document.createElement('div');
+                el.className = 'wallet-account-selector';
+                el.style.justifyContent = 'space-between';
+                el.style.border = isActive ? '1px solid var(--accent-blue)' : '1px solid var(--glass-border)';
+                el.innerHTML = `
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <div style="width: 12px; height: 12px; border-radius: 50%; background: ${isActive ? 'var(--accent-blue)' : 'var(--text-dim)'};"></div>
+                        ${label} <span style="font-size: 0.65rem; color: var(--text-dim);">${addr.substring(0,8)}...</span>
+                    </div>
+                `;
+                el.onclick = () => {
+                    localStorage.setItem('nfm_primary_wallet', addr);
+                    window.location.reload(); // Hot reload dashboard state
+                };
+                list.appendChild(el);
+                if (!isBase) idx++;
+            }
+        }
+
+        function copyModalAddress() {
+            navigator.clipboard.writeText(nodeAddress).then(() => showToast('✓ Address copied!'));
+        }
+
+        function toggleModalPKReveal() {
+            const revealDiv = document.getElementById('modal-pk-reveal');
+            if (revealDiv.style.display === 'block') {
+                revealDiv.style.display = 'none';
+            } else {
+                const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
+                revealDiv.innerText = wallets[nodeAddress] || 'Private key not found locally';
+                revealDiv.style.display = 'block';
+            }
+        }
+
+        async function createWalletFromModal() {
+            try {
+                const res = await fetch('/api/wallet/create', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'created') {
+                    const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
+                    wallets[data.address] = data.private_key_hex;
+                    localStorage.setItem('nfm_wallets', JSON.stringify(wallets));
+                    showToast('✓ New account created natively!');
+                    renderModalAccounts();
+                } else showToast('Failed to create', true);
+            } catch(e) { showToast('Network error', true); }
+        }
+
+        async function importWalletFromModal() {
+            const pk = document.getElementById('modal-import-pk').value.trim();
+            if (!pk || pk.length !== 64) return showToast('Invalid Private Key payload (Must be 64-char Hex)', true);
+            try {
+                const privKeyBytes = hexToBytes(pk);
+                const pubKeyBytes = await ed25519.getPublicKeyAsync(privKeyBytes);
+                const pubHashBuf = await crypto.subtle.digest('SHA-256', pubKeyBytes);
+                const pubHashHex = Array.from(new Uint8Array(pubHashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+                const address = `nfm_${pubHashHex}`;
+                
+                const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
+                wallets[address] = pk;
+                localStorage.setItem('nfm_wallets', JSON.stringify(wallets));
+                showToast('✓ Account imported successfully!');
+                document.getElementById('modal-import-pk').value = '';
+                switchWalletTab('accounts');
+            } catch(e) { showToast('Cryptography mismatch during import', true); }
+        }
+
+        async function executeModalTransfer() {
+            if (!ed25519) return showToast('Crypto core loading. Wait 1 sec.', true);
+            const to = document.getElementById('modal-transfer-to').value.trim();
+            const amount = parseFloat(document.getElementById('modal-transfer-amount').value);
+            const resultDiv = document.getElementById('modal-transfer-result');
+
+            if (!to || !amount) return showToast('Incomplete parameters', true);
+            
+            // Auto retrieve PK from local vault securely
+            const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
+            const pkHex = wallets[nodeAddress];
+            if (!pkHex) {
+                if (nodeAddress === window.baseNodeAddress) {
+                    return showToast('CRITICAL: To send NVC from Founder Node, please Import its Private Key via Accounts tab.', true);
+                }
+                return showToast('CRITICAL: Local Vault missing private key. Use Import.', true);
+            }
+
+            try {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<span style="color:var(--text-dim);">Signing and encrypting intent...</span>`;
+
+                const privKeyBytes = hexToBytes(pkHex);
+                const pubKeyBytes = await ed25519.getPublicKeyAsync(privKeyBytes);
+                const pubKeyHex = bytesToHex(pubKeyBytes);
+                
+                const message = `${nodeAddress}|${to}|${amount.toFixed(8)}`;
+                const msgBytes = new TextEncoder().encode(message);
+                const sigBytes = await ed25519.signAsync(msgBytes, privKeyBytes);
+                const sigHex = bytesToHex(sigBytes);
+
+                const res = await fetch('/api/transfer/secure', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from: nodeAddress, to, amount, public_key_hex: pubKeyHex, signature_hex: sigHex })
+                });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    resultDiv.style.background = 'rgba(0, 255, 136, 0.1)';
+                    resultDiv.style.border = '1px solid rgba(0,255,136,0.3)';
+                    resultDiv.innerHTML = `✓ <strong>${data.amount} NVC</strong> authorized → ${data.to.substring(0, 16)}...<br><small style="color: var(--text-dim)">${data.message}</small>`;
+                    document.getElementById('modal-transfer-amount').value = '';
+                    fetchData(); // Trigger early update
+                } else {
+                    resultDiv.style.background = 'rgba(255, 0, 110, 0.1)';
+                    resultDiv.style.border = '1px solid rgba(255,0,110,0.3)';
+                    resultDiv.innerHTML = `✗ Transaction Rejected: ${data.error}`;
+                }
+            } catch (e) { resultDiv.innerHTML = `✗ Internal Error: ${e.message}`; }
+        }
+
+        setInterval(fetchData, 4000);
+        fetchData();
+    </script>
+</body>
+</html>

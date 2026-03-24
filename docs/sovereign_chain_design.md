@@ -1,21 +1,23 @@
 # NFM Sovereign Chain Design
 
-Blockchain L1 sendiri yang berjalan beriringan dengan komputasi AI NFM.
+A self-sovereign L1 Blockchain that runs in tandem with NFM AI computation.
 
-## 1. Arsitektur L1
+## 1. L1 Architecture
 - **Consensus**: DPoS (Delegated Proof of Stake) + PoC (Proof of Computation).
-- **State-Bridge**: Model AI memiliki hak akses "Read-only" langsung ke data on-chain.
+- **State-Bridge**: AI models have direct "Read-only" access to on-chain data.
 
 ## 2. NLC (Natural Language to Chain)
-- **Intent Classifier**: Menerjemahkan bahasa chat menjadi blockchain call.
-- **ABI Mapper**: Menghubungkan perintah user ke fungsi smart contract secara otomatis.
+- **Intent Classifier**: Translates chat language into blockchain calls.
+- **ABI Mapper**: Automatically maps user commands to smart contract functions.
 
 ## 3. Professional API Gateway
 - **Auth**: HMAC Signature + OAuth2.
-- **Billing**: Pemotongan biaya NFM Credit dilakukan secara on-chain per inferensi.
+- **Billing**: NFM Credit deductions are performed on-chain per inference.
+
 ## 4. DAO Governance (Decentralized Decision Making)
-Untuk memastikan project tetap berjalan meskipun tanpa intervensi Founder secara langsung di masa depan:
-- **Proposal System**: Pemegang NFM Gold (Staker) bisa mengajukan proposal untuk mengubah parameter jaringan (misal: penyesuaian multiplier reward atau fee marketplace).
-- **Voting Power**: Kekuatan suara dihitung berdasarkan jumlah dan durasi staking NFM Gold.
-- **On-Chain Execution**: Hasil voting yang disetujui akan otomatis dieksekusi oleh protokol (Hard-coded governance).
-- **Founder Veto (Phase 1)**: Di fase awal, Founder memiliki hak veto untuk mencegah serangan tata kelola (governance attack) hingga jaringan cukup dewasa.
+Ensuring the project remains operational even without direct Founder intervention in the future:
+- **Proposal System**: NFM Gold holders (Stakers) can submit proposals to change network parameters (e.g., adjusting reward multipliers or marketplace fees).
+- **Voting Power**: Voting strength is calculated based on the amount and duration of NFM Gold staked.
+- **On-Chain Execution**: Approved voting results are automatically executed by the protocol (Hard-coded governance).
+- **Founder Veto (Phase 1)**: In the early stages, the Founder holds veto rights to prevent governance attacks until the network attains sufficient maturity.
+

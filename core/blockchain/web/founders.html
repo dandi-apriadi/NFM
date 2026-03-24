@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFM | Founders Governance Portal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #05050a;
+            --accent-gold: #ffcc00;
+            --accent-red: #ff3366;
+            --glass-bg: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #e0e0ff;
+            --text-dim: #8888aa;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 50% -20%, rgba(255, 204, 0, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 0% 100%, rgba(255, 51, 102, 0.05) 0%, transparent 40%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .logo {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: 4px;
+            color: var(--accent-gold);
+            text-shadow: 0 0 20px rgba(255, 204, 0, 0.3);
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            background: rgba(255, 204, 0, 0.1);
+            color: var(--accent-gold);
+            padding: 6px 16px;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border: 1px solid rgba(255, 204, 0, 0.2);
+            text-transform: uppercase;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+        }
+
+        .admin-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 32px;
+            transition: all 0.3s ease;
+        }
+
+        .admin-card:hover {
+            border-color: rgba(255, 204, 0, 0.3);
+        }
+
+        h2 { font-size: 1.25rem; margin-bottom: 24px; color: #fff; display: flex; align-items: center; gap: 12px; }
+
+        .input-group { margin-bottom: 20px; }
+        label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 8px; text-transform: uppercase; }
+        
+        input {
+            width: 100%;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 14px;
+            color: #fff;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+        }
+
+        input:focus { outline: none; border-color: var(--accent-gold); }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            font-size: 0.95rem;
+        }
+
+        .btn-gold { background: var(--accent-gold); color: #000; }
+        .btn-gold:hover { background: #ffd633; transform: translateY(-2px); }
+
+        .btn-red { background: transparent; border: 1px solid var(--accent-red); color: var(--accent-red); }
+        .btn-red:hover { background: var(--accent-red); color: #fff; }
+
+        .status-list {
+            background: rgba(0,0,0,0.2);
+            border-radius: 16px;
+            padding: 20px;
+            margin-top: 32px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.9rem;
+        }
+        
+        #toast {
+            position: fixed; bottom: 24px; right: 24px; padding: 16px 32px; border-radius: 12px;
+            background: #222; color: #fff; display: none; z-index: 3000; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .back-link {
+            margin-top: 40px;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+        .back-link:hover { color: var(--accent-gold); }
+    </style>
+</head>
+<body>
+    <div id="toast"></div>
+
+    <div class="container">
+        <header>
+            <div class="logo">NFM FOUNDERS PORTAL</div>
+            <span class="badge">Sovereign Admin Access</span>
+        </header>
+
+        <div class="grid">
+            <div class="admin-card">
+                <h2>Security Override</h2>
+                <div class="input-group">
+                    <label>Target NFM Address</label>
+                    <input type="text" id="freeze-target" placeholder="nfm_...">
+                </div>
+                <button class="btn btn-red" onclick="actionAccount('freeze')">Freeze Account</button>
+                <div style="height: 12px;"></div>
+                <button class="btn btn-gold" onclick="actionAccount('unfreeze')">Restore Account</button>
+            </div>
+
+            <div class="admin-card">
+                <h2>Protocol State</h2>
+                <div class="input-group">
+                    <label>Emergency Mode</label>
+                    <div id="protocol-status" style="color: #00ff88; font-weight: 700; margin-top: 5px;">ACTIVE / OPERATIONAL</div>
+                </div>
+                <div class="status-list">
+                    <div class="status-item">
+                        <span style="color: var(--text-dim);">Governance Quorum</span>
+                        <span>67% YES</span>
+                    </div>
+                     <div class="status-item">
+                        <span style="color: var(--text-dim);">Network Integrity</span>
+                        <span>SECURED</span>
+                    </div>
+                </div>
+                <div style="height: 20px;"></div>
+                <button class="btn btn-gold" onclick="toggleRateLimit()">Toggle Rate Limit</button>
+                <div style="height: 32px;"></div>
+                <h2 style="color: var(--accent-red); font-size: 1rem;">Critical Override</h2>
+                <button class="btn btn-red" style="background: rgba(255, 51, 102, 0.1);" onclick="nukeProtocol()">NUKE PROTOCOL</button>
+            </div>
+        </div>
+
+        <div style="text-align: center;">
+            <a href="/" class="back-link">&larr; Return to Public Dashboard</a>
+        </div>
+    </div>
+
+    <script>
+        const API_SECRET = "{{API_SECRET}}";
+
+        async function generateSignature(url, bodyStr) {
+            const encoder = new TextEncoder();
+            const payload = API_SECRET + ":" + url + ":" + bodyStr;
+            const dataBuffer = encoder.encode(payload);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        function showToast(msg, isError = false) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.background = isError ? '#ff3366' : '#ffcc00';
+            t.style.color = isError ? '#fff' : '#000';
+            t.style.display = 'block';
+            setTimeout(() => { t.style.display = 'none'; }, 3000);
+        }
+
+        async function actionAccount(type) {
+            const target = document.getElementById('freeze-target').value.trim();
+            if (!target) return showToast("Address required", true);
+
+            try {
+                const bodyStr = JSON.stringify({ target: target });
+                const sig = await generateSignature(`/api/admin/${type}`, bodyStr);
+                const res = await fetch(`/api/admin/${type}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-nfm-signature': sig },
+                    body: bodyStr
+                });
+                const data = await res.json();
+                if (data && data.status === 'success') {
+                    showToast(`Successfully ${type}d ${(target || '').substring(0,10)}...`);
+                } else {
+                    showToast(data?.error || "Action failed", true);
+                }
+            } catch (e) { showToast("Network error", true); }
+        }
+
+        async function toggleRateLimit() {
+            try {
+                const bodyStr = JSON.stringify({ action: 'TOGGLE' });
+                const sig = await generateSignature('/api/admin/toggle_ratelimit', bodyStr);
+                const res = await fetch('/api/admin/toggle_ratelimit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-nfm-signature': sig },
+                    body: bodyStr
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    showToast(data.message);
+                } else {
+                    showToast(data.error || "Toggle failed", true);
+                }
+            } catch (e) { showToast("Network error", true); }
+        }
+
+        async function nukeProtocol() {
+            if (!confirm("CRITICAL WARNING: This will ACTIVATE EMERGENCY LOCKDOWN and halt protocol activities. Proceed?")) return;
+            
+            try {
+                const sig = await generateSignature('/api/admin/nuke', '');
+                const res = await fetch('/api/admin/nuke', { 
+                    method: 'POST',
+                    headers: { 'x-nfm-signature': sig }
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    showToast("PROTOCOL NUKED: Lockdown active", true);
+                    document.getElementById('protocol-status').innerText = "LOCKDOWN / EMERGENCY ACIVATED";
+                    document.getElementById('protocol-status').style.color = "#ff3366";
+                } else {
+                    showToast(data.error || "Nuke failed", true);
+                }
+            } catch (e) { showToast("Network error", true); }
+        }
+    </script>
+</body>
+</html>

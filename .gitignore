@@ -1,0 +1,25 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Databases
+*.db/
+nfm_main.db/
+nfm_wallets.db/
+
+# Logs and temps
+*.log
+blockchain_error.txt
+blockchain_log.txt
+explorer_log.txt
+node_output.log
+build_errors.txt
+core/blockchain_log.txt
+
+# Node modules
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
