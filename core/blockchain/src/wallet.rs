@@ -43,6 +43,11 @@ impl CryptoWallet {
         self.signing_key.sign(message)
     }
 
+    /// Export private key bytes as hex string (PHASE 18.2 UI RECOVERY)
+    pub fn export_private_key_hex(&self) -> String {
+        hex::encode(self.signing_key.to_bytes())
+    }
+
     /// Verifikasi tanda tangan
     pub fn verify(verifying_key: &VerifyingKey, message: &[u8], signature: &Signature) -> bool {
         verifying_key.verify(message, signature).is_ok()

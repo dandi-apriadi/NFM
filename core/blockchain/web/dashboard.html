@@ -255,12 +255,14 @@
         #modern-wallet-modal {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.6);
-            backdrop-filter: blur(8px);
+            background: rgba(0,0,0,0.15);
+            backdrop-filter: blur(2px);
             display: none;
-            justify-content: center;
-            align-items: center;
+            justify-content: flex-end;
+            align-items: flex-start;
             z-index: 3000;
+            padding: 80px 40px;
+            box-sizing: border-box;
         }
         .wallet-app-card {
             background: #0f1015;
@@ -1198,10 +1200,15 @@
             const wallets = JSON.parse(localStorage.getItem('nfm_wallets') || '{}');
             const pkHex = wallets[nodeAddress];
             if (!pkHex) {
+                resultDiv.style.display = 'block';
+                resultDiv.style.background = 'rgba(255, 0, 110, 0.1)';
+                resultDiv.style.border = '1px solid rgba(255,0,110,0.3)';
                 if (nodeAddress === window.baseNodeAddress) {
-                    return showToast('CRITICAL: To send NVC from Founder Node, please Import its Private Key via Accounts tab.', true);
+                    resultDiv.innerHTML = `✗ CRITICAL: To send NVC from Founder Node, please Import its Private Key via Accounts tab.`;
+                } else {
+                    resultDiv.innerHTML = `✗ CRITICAL: Local Vault missing private key. Use Import.`;
                 }
-                return showToast('CRITICAL: Local Vault missing private key. Use Import.', true);
+                return;
             }
 
             try {

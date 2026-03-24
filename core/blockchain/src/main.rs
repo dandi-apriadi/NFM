@@ -49,17 +49,37 @@ impl Blockchain {
         }
 
         if chain.is_empty() {
-            println!("[CHAIN] Creating Genesis Block...");
-            let genesis = Block::new(0, "NFM GENESIS BLOCK - The Birth of Sovereign AI".to_string(), "0".to_string());
-            if let Some(ref s) = storage {
-                s.store_block(&genesis).ok();
-            }
-            chain.push(genesis);
+            println!("[CHAIN] No database found. Ready for Genesis.");
         } else {
             println!("[CHAIN] Loaded {} blocks from database", chain.len());
         }
 
         Blockchain { chain, storage }
+    }
+
+    fn create_genesis(&mut self, founder_address: &str) {
+        if !self.chain.is_empty() { return; }
+
+        println!("[CHAIN] Creating Structured Genesis Block...");
+        let genesis_data = crate::block::BlockData {
+            transactions: vec!["GENESIS_REWARD: @founder (+500 NVC)".to_string()],
+            rewards: vec![crate::block::NodeRewardInfo { 
+                address: founder_address.to_string(), 
+                amount: 500.0 
+            }],
+            economy: crate::block::EconomySummary { 
+                fees_collected: 0.0, 
+                burned: 0.0, 
+                epoch_number: 0 
+            },
+        };
+        let genesis_json = serde_json::to_string(&genesis_data).unwrap_or_default();
+        let genesis = Block::new(0, genesis_json, "0".to_string());
+        
+        if let Some(ref s) = self.storage {
+            let _ = s.store_block(&genesis);
+        }
+        self.chain.push(genesis);
     }
 
     fn add_block(&mut self, mut new_block: Block) {
@@ -114,12 +134,16 @@ fn main() {
 
     // Generate Founder wallet deterministically from a fixed seed
     let founder_wallet = CryptoWallet::from_seed(&[1u8; 32]);
-    
-    // Only the Founder node exists at genesis. Other participants join
-    // organically by creating wallets and contributing to missions.
     let founder = NfmId::new_with_address(&founder_wallet.address, "founder", 1);
+    
+    // Ensure Genesis block exists if chain is fresh
+    blockchain.create_genesis(&founder.address);
 
     println!("  @founder [NODE] Wallet: {} [ED25519]", founder.address);
+    if blockchain.chain.len() <= 1 {
+        println!("  [CRITICAL SECURITY] FOUNDER PRIVATE KEY: {}", founder_wallet.export_private_key_hex());
+        println!("  Note: Keep this key safe. You need it to sign transactions from the dashboard.");
+    }
     println!("  Note: Additional participants join by creating wallets and contributing.");
 
     let device_id = DeviceFingerprint::generate_id("192.168.1.1", "NFM-Client/1.0");
