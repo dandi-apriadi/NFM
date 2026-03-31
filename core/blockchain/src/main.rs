@@ -221,6 +221,16 @@ fn main() {
     // =============================================
     println!("\n--- PHASE 5: P2P GOSSIP ---");
     let p2p_node = P2PNode::new(&founder.address, node_config.p2p_port);
+    let shared_p2p_status = Arc::new(Mutex::new(serde_json::json!({
+        "gossip_enabled": node_config.p2p_gossip_enabled,
+        "listening_port": node_config.p2p_port,
+        "peer_count": 0,
+        "known_peers": [],
+        "seed_count": node_config.p2p_seed_peers.len(),
+        "last_sync_unix": chrono::Utc::now().timestamp(),
+        "chain_blocks": blockchain.chain.len(),
+        "status": if node_config.p2p_gossip_enabled { "starting" } else { "disabled" }
+    })));
     {
         let mut chain_lock = p2p_node.chain.lock().unwrap();
         *chain_lock = blockchain.chain.clone();
@@ -243,6 +253,26 @@ fn main() {
                     println!("[P2P] Local chain synced from network ({} blocks)", best_len);
                 }
             }
+        }
+
+        {
+            let known_peers: Vec<String> = p2p_node
+                .peers
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|p| p.endpoint())
+                .collect();
+            *shared_p2p_status.lock().unwrap() = serde_json::json!({
+                "gossip_enabled": true,
+                "listening_port": node_config.p2p_port,
+                "peer_count": known_peers.len(),
+                "known_peers": known_peers,
+                "seed_count": node_config.p2p_seed_peers.len(),
+                "last_sync_unix": chrono::Utc::now().timestamp(),
+                "chain_blocks": blockchain.chain.len(),
+                "status": "online"
+            });
         }
     } else {
         println!("[P2P] Gossip disabled via NFM_P2P_GOSSIP=false");
@@ -333,6 +363,7 @@ fn main() {
         brain_db: shared_brain_db.clone(),
         brain_tokens: Arc::new(Mutex::new(Vec::new())), // Whitelist tokens—empty means open access
         status_cache: Arc::new(Mutex::new(None)),
+        p2p_status: shared_p2p_status.clone(),
         brain_snapshot_store: Arc::new(Mutex::new(brain_snapshot_store)),
     };
     api::start_api_server(api_state, node_config.api_port);
@@ -634,6 +665,26 @@ fn main() {
                 if let Some(last_block) = blockchain.chain.last() {
                     p2p_node.broadcast_block(last_block);
                 }
+            }
+
+            if node_config.p2p_gossip_enabled {
+                let known_peers: Vec<String> = p2p_node
+                    .peers
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|p| p.endpoint())
+                    .collect();
+                *shared_p2p_status.lock().unwrap() = serde_json::json!({
+                    "gossip_enabled": true,
+                    "listening_port": node_config.p2p_port,
+                    "peer_count": known_peers.len(),
+                    "known_peers": known_peers,
+                    "seed_count": node_config.p2p_seed_peers.len(),
+                    "last_sync_unix": chrono::Utc::now().timestamp(),
+                    "chain_blocks": blockchain.chain.len(),
+                    "status": "online"
+                });
             }
 
             // Reset Dynamic Gas Fee counter for the new epoch

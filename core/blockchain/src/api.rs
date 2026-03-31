@@ -274,6 +274,7 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
 
     let api_docs = vec![
         serde_json::json!({ "method": "GET", "path": "/api/status", "description": "Core node status and tokenomics", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/p2p/status", "description": "P2P gossip telemetry and peer health", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/blocks", "description": "Recent blocks", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/mempool", "description": "Pending intents", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/transfer/create", "description": "Queue a transfer intent", "authRequired": false }),
@@ -473,6 +474,8 @@ pub struct ApiState {
     pub brain_tokens: Arc<Mutex<Vec<String>>>,
     /// Cache respons /api/status untuk mengurangi lock contention di endpoint agregat
     pub status_cache: Arc<Mutex<Option<StatusCacheEntry>>>,
+    /// Status ringkas P2P gossip untuk endpoint observability
+    pub p2p_status: Arc<Mutex<serde_json::Value>>,
     /// Penyimpanan snapshot brain di sled untuk persistensi antar restart
     pub brain_snapshot_store: Arc<Mutex<Option<sled::Db>>>,
 }
@@ -739,6 +742,10 @@ pub fn start_api_server(state: ApiState, port: u16) {
                             (200, "application/json", payload)
                         }
                     }
+                },
+                ("GET", "/api/p2p/status") => {
+                    let status = state.p2p_status.lock().unwrap().clone();
+                    (200, "application/json", status.to_string())
                 },
                 ("GET", "/api/app/state") => {
                     let payload = build_frontend_app_state(&state);
@@ -2529,6 +2536,16 @@ mod tests {
             brain_db: Arc::new(Mutex::new(GeoDistributedBrainDb::new())),
             brain_tokens: Arc::new(Mutex::new(Vec::new())),
             status_cache: Arc::new(Mutex::new(None)),
+            p2p_status: Arc::new(Mutex::new(serde_json::json!({
+                "gossip_enabled": false,
+                "listening_port": 0,
+                "peer_count": 0,
+                "known_peers": [],
+                "seed_count": 0,
+                "last_sync_unix": 0,
+                "chain_blocks": 0,
+                "status": "inactive"
+            }))),
             brain_snapshot_store: Arc::new(Mutex::new(None)),
         };
 
@@ -2617,7 +2634,24 @@ mod tests {
         assert!(!is_protected_endpoint("/"));
         assert!(!is_protected_endpoint("/api/blocks"));
         assert!(!is_protected_endpoint("/api/status"));
+        assert!(!is_protected_endpoint("/api/p2p/status"));
         assert!(!is_protected_endpoint("/api/wallets"));
+    }
+
+    #[test]
+    fn test_p2p_status_endpoint_returns_ok() {
+        let secret = "test_secret_p2p_status";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let (status, body) = send_get(port, "/api/p2p/status", &[]);
+
+        assert_eq!(status, 200);
+        assert!(body.contains("peer_count"));
     }
 
     #[test]
