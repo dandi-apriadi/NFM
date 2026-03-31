@@ -16,3 +16,6 @@ pub mod nlc_intent;
 
 // Langkah 7: HR-AIS reputation and ingestion gate (MVP)
 pub mod hr_ais;
+
+// Backend integration orchestration (training->federated->audit->HR-AIS)
+pub mod pipeline;
