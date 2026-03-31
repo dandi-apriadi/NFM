@@ -3,13 +3,15 @@ import { Cpu, Power, Zap, Activity, Leaf, Globe, Terminal, RefreshCw, Key, Datab
 import { useAppData } from '../context/AppDataContext';
 
 const NodeRunner = () => {
-   const { data } = useAppData();
+   const { data, p2p } = useAppData();
    const DUMMY_NODE_STATS = data.node_stats;
    const DUMMY_STATUS = data.status;
    const DUMMY_API_DOCS = data.api_docs;
+   const peerRows = p2p.known_peers.slice(0, 8);
+   const p2pHealthLabel = p2p.gossip_enabled ? (p2p.status || 'online').toUpperCase() : 'DISABLED';
 
   const [terminalLogs] = useState([
-    { time: '14:32:01', level: 'INFO', module: 'mesh_node', msg: 'Connected to 24 peers' },
+    { time: '14:32:01', level: 'INFO', module: 'mesh_node', msg: `Connected to ${p2p.peer_count} peers` },
     { time: '14:32:04', level: 'INFO', module: 'chain_sync', msg: 'Received block #128450' },
     { time: '14:32:04', level: 'OK', module: 'consensus', msg: 'Validated block #128450' },
     { time: '14:32:15', level: 'INFO', module: 'mempool', msg: 'Added 3 new intents' },
@@ -47,7 +49,7 @@ const NodeRunner = () => {
         <div className="flex items-center gap-4">
            <div className="text-right">
               <div className="text-[10px] text-muted uppercase tracking-tighter">Node Health</div>
-              <div className="text-xl font-display text-success">98.4% <span className="text-xs opacity-60">OPTIMAL</span></div>
+              <div className="text-xl font-display text-success">98.4% <span className="text-xs opacity-60">{p2pHealthLabel}</span></div>
            </div>
            <button className="nfm-btn nfm-btn--danger nfm-btn--sm h-10 px-4">
               <Power size={14} /> Kill Process
@@ -65,7 +67,7 @@ const NodeRunner = () => {
         {[
           { label: 'CPU LOAD', value: `${DUMMY_NODE_STATS.cpu}%`, icon: <Cpu size={16}/>, color: 'cyan', bar: DUMMY_NODE_STATS.cpu },
           { label: 'MEMORY', value: DUMMY_NODE_STATS.memory.split('/')[0], icon: <Database size={16}/>, color: 'purple', bar: 45 },
-          { label: 'CONNECTED PEERS', value: DUMMY_STATUS.peers, icon: <Globe size={16}/>, color: 'pink', bar: 100 },
+               { label: 'CONNECTED PEERS', value: p2p.peer_count, icon: <Globe size={16}/>, color: 'pink', bar: p2p.peer_count > 0 ? 100 : 0 },
           { label: 'EPOCH CYCLE', value: formatTime(epochTime), icon: <RefreshCw size={16}/>, color: 'gold', bar: (epochTime / 300) * 100 },
         ].map((stat, idx) => (
           <div key={idx} className="nfm-glass-card" style={{ padding: 'var(--space-5)', marginBottom: 0 }}>
@@ -140,23 +142,25 @@ const NodeRunner = () => {
                       </tr>
                    </thead>
                    <tbody className="text-secondary">
-                      {[
-                        { id: 'nfm_v1_validator_kappa', ping: '12ms', ver: 'p2p_v3', status: 'ACTIVE' },
-                        { id: 'nfm_v1_validator_omega', ping: '45ms', ver: 'p2p_v3', status: 'ACTIVE' },
-                        { id: 'nfm_v1_relay_mainnet_01', ping: '8ms', ver: 'p2p_v3.1', status: 'BANNED' },
-                        { id: 'nfm_v1_validator_zeta', ping: '112ms', ver: 'p2p_v3', status: 'LAGGING' },
-                      ].map((peer, idx) => (
+                      {peerRows.length > 0 ? peerRows.map((peer, idx) => (
                         <tr key={idx} className="border-b border-white-02">
-                           <td className="py-3 text-cyan">{peer.id.slice(0, 20)}...</td>
-                           <td className="py-3">{peer.ping}</td>
-                           <td className="py-3 text-muted">{peer.ver}</td>
-                           <td className={`py-3 text-right font-bold ${peer.status === 'ACTIVE' ? 'text-success' : peer.status === 'BANNED' ? 'text-error' : 'text-warning'}`}>
-                              {peer.status}
+                           <td className="py-3 text-cyan">{peer}</td>
+                           <td className="py-3 text-muted">n/a</td>
+                           <td className="py-3 text-muted">p2p_v3</td>
+                           <td className={`py-3 text-right font-bold ${p2p.status === 'online' ? 'text-success' : 'text-warning'}`}>
+                              {p2p.status === 'online' ? 'ACTIVE' : 'SYNCING'}
                            </td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr>
+                           <td className="py-3 text-muted" colSpan={4}>No peer discovered yet. Configure NFM_P2P_SEEDS and restart node.</td>
+                        </tr>
+                      )}
                    </tbody>
                 </table>
+             </div>
+             <div className="text-[10px] text-muted mt-4">
+                P2P status: {p2p.status} | Port: {p2p.listening_port} | Seeds: {p2p.seed_count}
              </div>
           </div>
         </div>
