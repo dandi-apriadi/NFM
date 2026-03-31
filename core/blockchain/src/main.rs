@@ -16,6 +16,7 @@ mod storage;
 mod consensus;
 mod contract;
 mod mission;
+mod load_test;
 mod config;
 
 use crate::identity::NfmId;
