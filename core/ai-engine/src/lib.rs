@@ -10,3 +10,6 @@ pub mod federated_aggregation;
 
 // Langkah 6: Model audit service (MVP)
 pub mod model_audit;
+
+// Langkah 7: NLC intent guard (MVP)
+pub mod nlc_intent;
