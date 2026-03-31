@@ -268,6 +268,7 @@ fn main() {
         mempool: shared_mempool.clone(),
         next_block_timestamp: shared_next_block.clone(),
         brain_db: shared_brain_db.clone(),
+        brain_tokens: Arc::new(Mutex::new(Vec::new())), // Whitelist tokens—empty means open access
     };
     api::start_api_server(api_state, node_config.api_port);
     println!("  Dashboard running at http://127.0.0.1:{}", node_config.api_port);

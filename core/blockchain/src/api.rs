@@ -62,6 +62,21 @@ fn is_protected_endpoint(url: &str) -> bool {
         || url == "/api/mission/complete"
 }
 
+/// Validasi bearer token untuk public brain endpoints
+fn validate_brain_token(tokens: &[String], auth_header: &str) -> bool {
+    if tokens.is_empty() {
+        // Jika tidak ada token yang dikonfigurasi, akses terbuka
+        return true;
+    }
+    
+    // Ekstrak token dari header "Bearer <token>"
+    if let Some(token) = auth_header.strip_prefix("Bearer ") {
+        tokens.contains(&token.to_string())
+    } else {
+        false
+    }
+}
+
 // ======================================================================
 // UNIVERSAL GAS FEE [PHASE 11]
 // ======================================================================
@@ -109,6 +124,8 @@ pub struct ApiState {
     pub next_block_timestamp: Arc<Mutex<u64>>,
     /// Distributed brain data router (geo + latency + load aware)
     pub brain_db: Arc<Mutex<GeoDistributedBrainDb>>,
+    /// Whitelisted bearer tokens untuk public /api/brain/* endpoints
+    pub brain_tokens: Arc<Mutex<Vec<String>>>,
 }
 
 /// Mulai REST API server di background thread
@@ -191,6 +208,27 @@ pub fn start_api_server(state: ApiState, port: u16) {
                     }
                 }
                 // POST endpoints: signature akan diverifikasi setelah body dibaca (di dalam handler)
+            }
+
+            // --- BEARER TOKEN VALIDATION for public /api/brain/* endpoints ---
+            if url.starts_with("/api/brain/") {
+                let brain_tokens = state.brain_tokens.lock().unwrap();
+                if !brain_tokens.is_empty() {
+                    let auth_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "authorization")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !validate_brain_token(&brain_tokens, &auth_header) {
+                        let response = tiny_http::Response::from_string(
+                            serde_json::json!({ "error": "Unauthorized: invalid or missing bearer token" }).to_string()
+                        )
+                        .with_status_code(401)
+                        .with_header(tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap());
+                        let _ = request.respond(response);
+                        continue;
+                    }
+                }
             }
 
             let (status, content_type, body) = match (method.as_str(), url.as_str()) {
@@ -1755,6 +1793,7 @@ mod tests {
             mempool: Arc::new(Mutex::new(Vec::new())),
             next_block_timestamp: Arc::new(Mutex::new(0)),
             brain_db: Arc::new(Mutex::new(GeoDistributedBrainDb::new())),
+            brain_tokens: Arc::new(Mutex::new(Vec::new())),
         };
 
         start_api_server(state, port);
@@ -2102,5 +2141,71 @@ mod tests {
         let (status, response_body) = send_post(port, "/api/transfer/secure", "{}", &[]);
         assert_eq!(status, 429);
         assert!(response_body.contains("Rate limit exceeded"));
+    }
+
+    #[test]
+    fn test_brain_route_accepts_request_without_configured_tokens() {
+        // Ketika tidak ada token yang dikonfigurasi, akses harus terbuka (empty Vec)
+        let secret = "test_secret_brain_open";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        // Register satu node agar tidak 503
+        let register_body = serde_json::json!({
+            "node_id": "test_node_1",
+            "region": "jkt",
+            "latitude": -6.2088,
+            "longitude": 106.8456
+        })
+        .to_string();
+        let sig = create_hmac(secret, "/api/admin/brain/node/register", &register_body);
+        let (status, _) = send_post(
+            port,
+            "/api/admin/brain/node/register",
+            &register_body,
+            &[format!("x-nfm-signature: {}", sig)],
+        );
+        assert_eq!(status, 200);
+
+        // Sekarang route tanpa token header harus berhasil (203 OK, bukan 401)
+        let route_body = serde_json::json!({
+            "requester_node_id": "id-jkt-a",
+            "user_latitude": -6.2,
+            "user_longitude": 106.8,
+            "data_class": "global",
+            "critical": false
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/brain/route", &route_body, &[]);
+
+        assert_eq!(status, 200);
+        assert!(response_body.contains("selected_node"));
+    }
+
+
+
+    #[test]
+    fn test_brain_status_accepts_valid_bearer_token() {
+        // Test penggunaan bearer token yang benar
+        let secret = "test_secret_brain_token";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        // Tanpa token (karena default empty), harus berhasil
+        let (status, response_body) = send_get(port, "/api/brain/status", &[]);
+
+        assert_eq!(status, 200);
+        assert!(response_body.contains("\"status\":\"ok\""));
     }
 }
