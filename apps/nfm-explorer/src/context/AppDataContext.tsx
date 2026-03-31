@@ -167,6 +167,8 @@ interface AppDataContextValue {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  refreshPaused: boolean;
+  setRefreshPaused: (paused: boolean) => void;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -188,6 +190,7 @@ export const AppDataProvider = ({ children }: { children: React.ReactNode }) => 
   const [p2p, setP2p] = useState<P2PStatus>(EMPTY_P2P);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshPaused, setRefreshPaused] = useState<boolean>(() => localStorage.getItem('nfm.app.refreshPaused') === 'true');
 
   const refresh = async () => {
     try {
@@ -224,13 +227,21 @@ export const AppDataProvider = ({ children }: { children: React.ReactNode }) => 
 
   useEffect(() => {
     refresh();
-    const timer = window.setInterval(refresh, 5000);
+    const timer = window.setInterval(() => {
+      if (!refreshPaused) {
+        refresh();
+      }
+    }, 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [refreshPaused]);
+
+  useEffect(() => {
+    localStorage.setItem('nfm.app.refreshPaused', refreshPaused ? 'true' : 'false');
+  }, [refreshPaused]);
 
   const value = useMemo(
-    () => ({ data, p2p, loading, error, refresh }),
-    [data, p2p, loading, error],
+    () => ({ data, p2p, loading, error, refresh, refreshPaused, setRefreshPaused }),
+    [data, p2p, loading, error, refreshPaused],
   );
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

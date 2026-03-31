@@ -395,6 +395,10 @@
   color: var(--text-muted);
   position: relative;
   transition: color 0.3s ease;
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
 }
 
 .nfm-tab-btn:hover { color: var(--text-primary); }
@@ -429,6 +433,10 @@
   color: var(--text-muted);
   border-radius: var(--radius-md);
   transition: all 0.3s ease;
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
 }
 
 .nfm-terminal-btn:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.03); }

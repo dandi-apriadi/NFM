@@ -54,3 +54,35 @@ export async function appPurchaseMarketItem(itemId: string, price: number, addre
     address,
   });
 }
+
+export async function p2pSetSeeds(seeds: string[]) {
+  return request('/api/p2p/seeds', 'POST', { seeds });
+}
+
+export async function p2pBootstrap() {
+  return request('/api/p2p/bootstrap', 'POST');
+}
+
+export async function p2pSync() {
+  return request('/api/p2p/sync', 'POST');
+}
+
+export async function p2pBanlist() {
+  return request('/api/p2p/banlist', 'GET');
+}
+
+export async function p2pBan(endpoint: string) {
+  return request('/api/p2p/ban', 'POST', { endpoint });
+}
+
+export async function p2pUnban(endpoint: string) {
+  return request('/api/p2p/unban', 'POST', { endpoint });
+}
+
+export async function p2pBulkBan(endpoints: string[]) {
+  return request('/api/p2p/ban/bulk', 'POST', { endpoints });
+}
+
+export async function p2pBulkUnban(endpoints: string[]) {
+  return request('/api/p2p/unban/bulk', 'POST', { endpoints });
+}

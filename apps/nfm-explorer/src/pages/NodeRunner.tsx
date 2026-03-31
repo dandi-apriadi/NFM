@@ -1,14 +1,20 @@
 import { useState, useEffect } from 'react';
 import { Cpu, Power, Zap, Activity, Leaf, Globe, Terminal, RefreshCw, Key, Database, Download, CheckCircle, Info, ArrowRight } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
+import { p2pBan, p2pBootstrap, p2pSetSeeds, p2pSync, p2pUnban } from '../api/client';
 
 const NodeRunner = () => {
-   const { data, p2p } = useAppData();
+   const { data, p2p, refresh } = useAppData();
    const DUMMY_NODE_STATS = data.node_stats;
    const DUMMY_STATUS = data.status;
    const DUMMY_API_DOCS = data.api_docs;
    const peerRows = p2p.known_peers.slice(0, 8);
    const p2pHealthLabel = p2p.gossip_enabled ? (p2p.status || 'online').toUpperCase() : 'DISABLED';
+   const peerHealthMap = new Map((p2p.peer_health ?? []).map((entry) => [entry.endpoint, entry]));
+   const nowUnix = Math.floor(Date.now() / 1000);
+   const reconnectCountdown = p2p.next_reconnect_unix && p2p.next_reconnect_unix > nowUnix
+      ? p2p.next_reconnect_unix - nowUnix
+      : 0;
 
   const [terminalLogs] = useState([
     { time: '14:32:01', level: 'INFO', module: 'mesh_node', msg: `Connected to ${p2p.peer_count} peers` },
@@ -32,6 +38,82 @@ const NodeRunner = () => {
     const rs = s % 60;
     return `${m.toString().padStart(2, '0')}:${rs.toString().padStart(2, '0')}`;
   };
+
+   const handleP2pSync = async () => {
+      try {
+         await p2pSync();
+         await refresh();
+         window.alert('P2P sync command accepted');
+      } catch (e) {
+         window.alert(e instanceof Error ? e.message : 'Failed to trigger P2P sync');
+      }
+   };
+
+   const handleP2pBootstrap = async () => {
+      const defaultSeeds = p2p.known_peers.slice(0, 4).join(',');
+      const seedInput = window.prompt('Seed peers CSV (host:port,host:port)', defaultSeeds);
+      if (seedInput === null) {
+         return;
+      }
+
+      const seeds = seedInput
+         .split(',')
+         .map((s) => s.trim())
+         .filter((s) => s.length > 0);
+
+      try {
+         await p2pSetSeeds(seeds);
+         await p2pBootstrap();
+         await refresh();
+         window.alert(`P2P bootstrap command accepted (${seeds.length} seeds)`);
+      } catch (e) {
+         window.alert(e instanceof Error ? e.message : 'Failed to bootstrap P2P mesh');
+      }
+   };
+
+   const handleBanPeer = async () => {
+      const defaultPeer = (p2p.peer_health ?? []).find((entry) => !entry.healthy)?.endpoint || peerRows[0] || '';
+      const endpoint = window.prompt('Peer endpoint to ban (host:port)', defaultPeer);
+      if (endpoint === null) {
+         return;
+      }
+
+      const trimmed = endpoint.trim();
+      if (!trimmed || !trimmed.includes(':')) {
+         window.alert('Invalid endpoint format. Use host:port');
+         return;
+      }
+
+      try {
+         await p2pBan(trimmed);
+         await refresh();
+         window.alert(`Ban command accepted for ${trimmed}`);
+      } catch (e) {
+         window.alert(e instanceof Error ? e.message : 'Failed to ban peer');
+      }
+   };
+
+   const handleUnbanPeer = async () => {
+      const defaultPeer = p2p.banned_peers?.[0] || '';
+      const endpoint = window.prompt('Peer endpoint to unban (host:port)', defaultPeer);
+      if (endpoint === null) {
+         return;
+      }
+
+      const trimmed = endpoint.trim();
+      if (!trimmed || !trimmed.includes(':')) {
+         window.alert('Invalid endpoint format. Use host:port');
+         return;
+      }
+
+      try {
+         await p2pUnban(trimmed);
+         await refresh();
+         window.alert(`Unban command accepted for ${trimmed}`);
+      } catch (e) {
+         window.alert(e instanceof Error ? e.message : 'Failed to unban peer');
+      }
+   };
 
   return (
     <div className="animate-in">
@@ -143,15 +225,29 @@ const NodeRunner = () => {
                    </thead>
                    <tbody className="text-secondary">
                       {peerRows.length > 0 ? peerRows.map((peer, idx) => (
+                                    (() => {
+                                       const telemetry = peerHealthMap.get(peer);
+                                       const latencyText = telemetry ? `${telemetry.latency_ms} ms` : 'n/a';
+                                       const quality = telemetry?.quality ?? (p2p.status === 'online' ? 'good' : 'degraded');
+                                       const score = telemetry?.score ?? (p2p.status === 'online' ? 70 : 30);
+                                       const statusClass = quality === 'excellent' || quality === 'good'
+                                          ? 'text-success'
+                                          : quality === 'critical' || quality === 'poor'
+                                             ? 'text-danger'
+                                             : 'text-warning';
+
+                                       return (
                         <tr key={idx} className="border-b border-white-02">
                            <td className="py-3 text-cyan">{peer}</td>
-                           <td className="py-3 text-muted">n/a</td>
+                                        <td className="py-3 text-muted">{latencyText}</td>
                            <td className="py-3 text-muted">p2p_v3</td>
-                           <td className={`py-3 text-right font-bold ${p2p.status === 'online' ? 'text-success' : 'text-warning'}`}>
-                              {p2p.status === 'online' ? 'ACTIVE' : 'SYNCING'}
+                                        <td className={`py-3 text-right font-bold ${statusClass}`}>
+                                             {quality.toUpperCase()} ({score})
                            </td>
                         </tr>
-                      )) : (
+                                       );
+                                    })()
+                                 )) : (
                         <tr>
                            <td className="py-3 text-muted" colSpan={4}>No peer discovered yet. Configure NFM_P2P_SEEDS and restart node.</td>
                         </tr>
@@ -160,7 +256,7 @@ const NodeRunner = () => {
                 </table>
              </div>
              <div className="text-[10px] text-muted mt-4">
-                P2P status: {p2p.status} | Port: {p2p.listening_port} | Seeds: {p2p.seed_count}
+                P2P status: {p2p.status} | Port: {p2p.listening_port} | Seeds: {p2p.seed_count} | Banned: {p2p.ban_count ?? p2p.banned_peers?.length ?? 0} | Healthy: {p2p.healthy_peers ?? p2p.peer_count} | Unhealthy: {p2p.unhealthy_peers ?? 0} | Reconnect attempts: {p2p.reconnect_attempts ?? 0} | Backoff: {p2p.reconnect_backoff_secs ?? 1}s{reconnectCountdown > 0 ? ` (${reconnectCountdown}s to retry)` : ''}
              </div>
           </div>
         </div>
@@ -175,8 +271,17 @@ const NodeRunner = () => {
                 <button className="nfm-btn nfm-btn--secondary w-full justify-start text-[11px] gap-3 h-11 border-purple-20 hover:border-purple">
                    <Key size={14} className="text-purple" /> Rotate Validator Keys
                 </button>
-                <button className="nfm-btn nfm-btn--secondary w-full justify-start text-[11px] gap-3 h-11 border-cyan-20 hover:border-cyan">
+                <button className="nfm-btn nfm-btn--secondary w-full justify-start text-[11px] gap-3 h-11 border-cyan-20 hover:border-cyan" onClick={handleP2pSync}>
                    <RefreshCw size={14} className="text-cyan" /> Force Chain Resync
+                </button>
+                <button className="nfm-btn nfm-btn--secondary w-full justify-start text-[11px] gap-3 h-11 border-cyan-20 hover:border-cyan" onClick={handleP2pBootstrap}>
+                   <Globe size={14} className="text-cyan" /> Bootstrap from Seeds
+                </button>
+                <button className="nfm-btn nfm-btn--secondary w-full justify-start text-[11px] gap-3 h-11 border-red-400/20 hover:border-red-400" onClick={handleBanPeer}>
+                   <Power size={14} className="text-danger" /> Ban Peer Endpoint
+                </button>
+                <button className="nfm-btn nfm-btn--secondary w-full justify-start text-[11px] gap-3 h-11 border-emerald-400/20 hover:border-emerald-400" onClick={handleUnbanPeer}>
+                   <CheckCircle size={14} className="text-success" /> Unban Peer Endpoint
                 </button>
                 <button className="nfm-btn nfm-btn--secondary w-full justify-start text-[11px] gap-3 h-11 border-pink-20 hover:border-pink">
                    <Database size={14} className="text-pink" /> Flush Local Cache

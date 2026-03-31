@@ -62,8 +62,24 @@ export interface P2PStatus {
   gossip_enabled: boolean;
   listening_port: number;
   peer_count: number;
+  healthy_peers?: number;
+  unhealthy_peers?: number;
   known_peers: string[];
+  peer_health?: Array<{
+    endpoint: string;
+    healthy: boolean;
+    latency_ms: number;
+    score?: number;
+    quality?: 'excellent' | 'good' | 'degraded' | 'poor' | 'critical' | string;
+    error?: string | null;
+  }>;
   seed_count: number;
+  ban_count?: number;
+  banned_peers?: string[];
+  reconnect_attempts?: number;
+  reconnect_backoff_secs?: number;
+  next_reconnect_unix?: number;
+  last_reconnect_unix?: number;
   last_sync_unix: number;
   chain_blocks: number;
   status: string;
