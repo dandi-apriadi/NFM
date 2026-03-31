@@ -7,3 +7,6 @@ pub mod training;
 
 // Langkah 5: Federated aggregation coordinator (FedAvg)
 pub mod federated_aggregation;
+
+// Langkah 6: Model audit service (MVP)
+pub mod model_audit;
