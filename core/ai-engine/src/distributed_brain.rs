@@ -69,7 +69,14 @@ pub struct RoutedRecord {
     pub replica_nodes: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrainSnapshot {
+    pub nodes: HashMap<String, NodeMeta>,
+    pub records: HashMap<String, RoutedRecord>,
+    pub weights: RouterWeights,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouterWeights {
     pub latency: f64,
     pub queue: f64,
@@ -112,6 +119,28 @@ impl GeoDistributedBrainDb {
 
     pub fn set_weights(&mut self, weights: RouterWeights) {
         self.weights = weights;
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn record_count(&self) -> usize {
+        self.records.len()
+    }
+
+    pub fn export_snapshot(&self) -> BrainSnapshot {
+        BrainSnapshot {
+            nodes: self.nodes.clone(),
+            records: self.records.clone(),
+            weights: self.weights.clone(),
+        }
+    }
+
+    pub fn import_snapshot(&mut self, snapshot: BrainSnapshot) {
+        self.nodes = snapshot.nodes;
+        self.records = snapshot.records;
+        self.weights = snapshot.weights;
     }
 
     pub fn register_node(&mut self, meta: NodeMeta) {
@@ -566,5 +595,29 @@ mod tests {
 
         assert_eq!(default_bench.selected_node, tuned_bench.selected_node);
         assert!(tuned_bench.selected_score <= default_bench.selected_score * 2.0);
+    }
+
+    #[test]
+    fn snapshot_roundtrip_restores_nodes_and_records() {
+        let mut db = setup_db();
+        db.upsert_record(
+            "policy:backup:1",
+            serde_json::json!({"mode": "resilient"}),
+            DataClass::Global,
+            "id-jkt-a",
+        )
+        .expect("failed to upsert record for snapshot test");
+
+        let snapshot = db.export_snapshot();
+
+        let mut restored = GeoDistributedBrainDb::new();
+        restored.import_snapshot(snapshot);
+
+        assert_eq!(restored.node_count(), 4);
+        assert_eq!(restored.record_count(), 1);
+        let rec = restored
+            .get_record("policy:backup:1")
+            .expect("restored record should exist");
+        assert_eq!(rec.value["mode"], "resilient");
     }
 }

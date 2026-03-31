@@ -290,6 +290,8 @@ pub fn start_api_server(state: ApiState, port: u16) {
                     (200, "application/json", serde_json::json!({
                         "status": "ok",
                         "strategy": "geo+latency+load+error",
+                        "nodes": brain.node_count(),
+                        "records": brain.record_count(),
                         "top_candidates": candidates
                     }).to_string())
                 },
@@ -1283,6 +1285,52 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         }
                     }
                 },
+                ("GET", "/api/admin/brain/snapshot/export") => {
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/brain/snapshot/export", "", &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let brain = state.brain_db.lock().unwrap();
+                        let snapshot = brain.export_snapshot();
+                        (200, "application/json", serde_json::json!({
+                            "status": "success",
+                            "snapshot": snapshot
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/admin/brain/snapshot/import") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/brain/snapshot/import", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let snapshot_value = data["snapshot"].clone();
+                        match serde_json::from_value(snapshot_value) {
+                            Ok(snapshot) => {
+                                let mut brain = state.brain_db.lock().unwrap();
+                                brain.import_snapshot(snapshot);
+                                (200, "application/json", serde_json::json!({
+                                    "status": "success",
+                                    "nodes": brain.node_count(),
+                                    "records": brain.record_count()
+                                }).to_string())
+                            }
+                            Err(e) => (400, "application/json", serde_json::json!({
+                                "error": format!("Invalid snapshot payload: {}", e)
+                            }).to_string()),
+                        }
+                    }
+                },
                 // ======================================================================
                 // MISSION START [PHASE 12.1] — Mulai mengerjakan misi
                 // ======================================================================
@@ -1642,6 +1690,42 @@ mod tests {
         (status, body)
     }
 
+    fn send_get(port: u16, path: &str, extra_headers: &[String]) -> (u16, String) {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect test server");
+
+        let mut headers = String::new();
+        for h in extra_headers {
+            headers.push_str(h);
+            headers.push_str("\r\n");
+        }
+
+        let request = format!(
+            "GET {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n{}\r\n",
+            path, port, headers
+        );
+
+        stream.write_all(request.as_bytes()).expect("write request");
+        let _ = stream.shutdown(std::net::Shutdown::Write);
+
+        let mut response = String::new();
+        stream.read_to_string(&mut response).expect("read response");
+
+        let status = response
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|code| code.parse::<u16>().ok())
+            .unwrap_or(0);
+
+        let body = response
+            .split("\r\n\r\n")
+            .nth(1)
+            .unwrap_or("")
+            .to_string();
+
+        (status, body)
+    }
+
     fn start_test_api_server(
         api_secret: &str,
         node_address: &str,
@@ -1940,6 +2024,31 @@ mod tests {
 
         assert_eq!(status, 503);
         assert!(response_body.contains("No healthy candidate node"));
+    }
+
+    #[test]
+    fn test_brain_snapshot_export_requires_signature() {
+        let secret = "test_secret_brain_snapshot_export";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let (status, response_body) = send_get(
+            port,
+            "/api/admin/brain/snapshot/export",
+            &["x-nfm-signature: invalid_sig".to_string()],
+        );
+
+        assert_eq!(status, 403);
+        assert!(
+            response_body.contains("invalid") || response_body.contains("missing"),
+            "unexpected auth error body: {}",
+            response_body
+        );
     }
 
     #[test]
