@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { Block, NFMStatus, NodeStats, P2PStatus, Transaction, UserProfile } from '../types';
+import { appUpdateSettings } from '../api/client';
 
 export interface AITask {
   id: string;
@@ -114,6 +115,39 @@ export interface AppState {
   api_docs: DevAPIEndpoint[];
 }
 
+export interface AppToast {
+  type: 'success' | 'error';
+  message: string;
+}
+
+interface PromptModalOptions {
+  title: string;
+  message: string;
+  placeholder?: string;
+  defaultValue?: string;
+  confirmText?: string;
+  cancelText?: string;
+}
+
+interface ConfirmModalOptions {
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+}
+
+type ModalState =
+  | {
+      kind: 'prompt';
+      options: PromptModalOptions;
+      resolve: (value: string | null) => void;
+    }
+  | {
+      kind: 'confirm';
+      options: ConfirmModalOptions;
+      resolve: (value: boolean) => void;
+    };
+
 const EMPTY_STATE: AppState = {
   status: {
     node: 'nfm-node',
@@ -169,6 +203,14 @@ interface AppDataContextValue {
   refresh: () => Promise<void>;
   refreshPaused: boolean;
   setRefreshPaused: (paused: boolean) => void;
+  toast: AppToast | null;
+  notifyToast: (toast: AppToast) => void;
+  notifySuccess: (message: string) => void;
+  notifyError: (message: string) => void;
+  clearToast: () => void;
+  requestPrompt: (options: PromptModalOptions) => Promise<string | null>;
+  requestConfirm: (options: ConfirmModalOptions) => Promise<boolean>;
+  updateSettings: (settings: Partial<UserProfile['settings']>) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -191,6 +233,103 @@ export const AppDataProvider = ({ children }: { children: React.ReactNode }) => 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshPaused, setRefreshPaused] = useState<boolean>(() => localStorage.getItem('nfm.app.refreshPaused') === 'true');
+  const [toast, setToast] = useState<AppToast | null>(null);
+  const [modalState, setModalState] = useState<ModalState | null>(null);
+  const [modalInputValue, setModalInputValue] = useState('');
+
+  const notifyToast = (nextToast: AppToast) => {
+    setToast(nextToast);
+  };
+
+  const notifySuccess = (message: string) => {
+    setToast({ type: 'success', message });
+  };
+
+  const notifyError = (message: string) => {
+    setToast({ type: 'error', message });
+  };
+
+  const clearToast = () => {
+    setToast(null);
+  };
+
+  const requestPrompt = (options: PromptModalOptions): Promise<string | null> => new Promise((resolve) => {
+    setModalInputValue(options.defaultValue ?? '');
+    setModalState({
+      kind: 'prompt',
+      options,
+      resolve,
+    });
+  });
+
+  const requestConfirm = (options: ConfirmModalOptions): Promise<boolean> => new Promise((resolve) => {
+    setModalState({
+      kind: 'confirm',
+      options,
+      resolve,
+    });
+  });
+
+  const closeModalAsCancelled = () => {
+    if (!modalState) {
+      return;
+    }
+    if (modalState.kind === 'confirm') {
+      modalState.resolve(false);
+    } else {
+      modalState.resolve(null);
+    }
+    setModalState(null);
+  };
+
+  const submitModal = () => {
+    if (!modalState) {
+      return;
+    }
+    if (modalState.kind === 'confirm') {
+      modalState.resolve(true);
+    } else {
+      modalState.resolve(modalInputValue.trim());
+    }
+    setModalState(null);
+  };
+
+  const updateSettings = async (next: Partial<UserProfile['settings']>) => {
+    const currentSettings = data.user_profile.settings || EMPTY_STATE.user_profile.settings!;
+    const newSettings: Required<Exclude<UserProfile['settings'], undefined>> = {
+      rpc: next.rpc ?? currentSettings.rpc,
+      theme: next.theme ?? (currentSettings.theme as any),
+      notifications: {
+        ...currentSettings.notifications,
+        ...(next.notifications || {}),
+      },
+    };
+
+    // Optimistic UI update
+    setData((prev) => ({
+      ...prev,
+      user_profile: {
+        ...prev.user_profile,
+        settings: newSettings,
+      },
+    }));
+
+    try {
+      if (next.rpc) {
+        localStorage.setItem('nfm.settings.rpc', next.rpc);
+      }
+      if (next.theme) {
+        localStorage.setItem('nfm.settings.theme', next.theme);
+      }
+      
+      await appUpdateSettings(newSettings as any);
+      notifySuccess('Settings synchronized');
+    } catch (err) {
+      console.error('Failed to sync settings:', err);
+      // We keep the optimistic update locally but notify the user
+      notifyError('Failed to sync settings with node');
+    }
+  };
 
   const refresh = async () => {
     try {
@@ -239,12 +378,113 @@ export const AppDataProvider = ({ children }: { children: React.ReactNode }) => 
     localStorage.setItem('nfm.app.refreshPaused', refreshPaused ? 'true' : 'false');
   }, [refreshPaused]);
 
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!modalState) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeModalAsCancelled();
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitModal();
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [modalState, modalInputValue]);
+
   const value = useMemo(
-    () => ({ data, p2p, loading, error, refresh, refreshPaused, setRefreshPaused }),
-    [data, p2p, loading, error, refreshPaused],
+    () => ({
+      data,
+      p2p,
+      loading,
+      error,
+      refresh,
+      refreshPaused,
+      setRefreshPaused,
+      toast,
+      notifyToast,
+      notifySuccess,
+      notifyError,
+      clearToast,
+      requestPrompt,
+      requestConfirm,
+      updateSettings,
+    }),
+    [data, p2p, loading, error, refreshPaused, toast],
   );
 
-  return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
+  return (
+    <>
+      <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '18px',
+            right: '18px',
+            zIndex: 60,
+            borderRadius: '12px',
+            padding: '10px 12px',
+            border: '1px solid rgba(255,255,255,0.12)',
+            background: toast.type === 'success' ? 'rgba(13, 185, 122, 0.16)' : 'rgba(220, 38, 38, 0.16)',
+            color: 'var(--text-primary)',
+            fontSize: '12px',
+            backdropFilter: 'blur(6px)',
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
+      {modalState && (
+        <div className="nfm-modal-overlay" onClick={closeModalAsCancelled}>
+          <div className="nfm-modal animate-in" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '560px' }}>
+            <div className="nfm-modal__header">
+              <h3 className="nfm-modal__title">{modalState.options.title}</h3>
+              <button className="nfm-modal-close" onClick={closeModalAsCancelled} aria-label="Close modal">
+                ✕
+              </button>
+            </div>
+            <p className="text-muted" style={{ marginBottom: 'var(--space-6)' }}>{modalState.options.message}</p>
+
+            {modalState.kind === 'prompt' && (
+              <input
+                className="nfm-input"
+                autoFocus
+                placeholder={modalState.options.placeholder}
+                value={modalInputValue}
+                onChange={(e) => setModalInputValue(e.target.value)}
+                style={{ marginBottom: 'var(--space-6)' }}
+              />
+            )}
+
+            <div className="flex gap-3" style={{ justifyContent: 'flex-end' }}>
+              <button className="nfm-btn nfm-btn--ghost" onClick={closeModalAsCancelled}>
+                {modalState.options.cancelText ?? 'Cancel'}
+              </button>
+              <button className="nfm-btn nfm-btn--primary" onClick={submitModal}>
+                {modalState.options.confirmText ?? 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 };
 
 export const useAppData = () => {

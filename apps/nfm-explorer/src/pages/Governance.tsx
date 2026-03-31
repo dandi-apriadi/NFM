@@ -1,46 +1,88 @@
 import { AlignLeft, CheckCircle2, XCircle, Clock, ArrowRight, Vote, Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
 import { appCreateProposal, appVoteProposal } from '../api/client';
 
 const Governance = () => {
-  const { data, refresh } = useAppData();
+  const navigate = useNavigate();
+  const { data, refresh, requestPrompt, notifySuccess, notifyError } = useAppData();
   const DUMMY_PROPOSALS = data.proposals;
   const DUMMY_USER = data.user_profile;
   const reputation = Number(DUMMY_USER.reputation ?? 0);
   const canVote = reputation > 0;
 
   const handleCreateProposal = async () => {
-    const title = window.prompt('Proposal title');
+    const title = await requestPrompt({
+      title: 'Create Proposal',
+      message: 'Proposal title',
+      placeholder: 'Proposal title',
+      confirmText: 'Next',
+    });
     if (!title) return;
-    const description = window.prompt('Proposal description') || 'Created from NFM Explorer';
+    const description =
+      (await requestPrompt({
+        title: 'Create Proposal',
+        message: 'Proposal description',
+        placeholder: 'Describe your proposal',
+        defaultValue: 'Created from NFM Explorer',
+        confirmText: 'Create',
+      })) || 'Created from NFM Explorer';
 
     try {
       await appCreateProposal(title, description, DUMMY_USER.nfmAddress);
       await refresh();
-      window.alert('Proposal created');
+      notifySuccess('Proposal created');
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Create proposal failed');
+      notifyError(e instanceof Error ? e.message : 'Create proposal failed');
     }
   };
 
   const handleVote = async (proposalId: string, approve: boolean) => {
     if (!canVote) {
-      window.alert('Voting requires reputation > 0. Participate in missions first to build reputation.');
+      notifyError('Voting requires reputation > 0. Participate in missions first to build reputation.');
       return;
     }
 
     try {
       await appVoteProposal(proposalId, approve, DUMMY_USER.nfmAddress);
       await refresh();
-      window.alert('Vote submitted');
+      notifySuccess('Vote submitted');
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Vote failed';
       if (message.toLowerCase().includes('no reputation')) {
-        window.alert('Vote rejected by backend: your reputation is still 0. Complete governance tasks first.');
+        notifyError('Vote rejected by backend: your reputation is still 0. Complete governance tasks first.');
       } else {
-        window.alert(message);
+        notifyError(message);
       }
     }
+  };
+
+  const handleDownloadCharter = () => {
+    const rules = [
+      'NFM Governance Charter',
+      '1. 1 NVC locked in staking equals 1 Voting Power (VP).',
+      '2. Proposals require a minimum quorum of 10M VP to be valid.',
+      '3. Active proposals run for 7 epochs.',
+      '4. Malicious proposals may trigger slashing.',
+      `5. Generated at: ${new Date().toISOString()}`,
+    ].join('\n');
+
+    const blob = new Blob([rules], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nfm-governance-charter-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    notifySuccess('Governance charter downloaded');
+  };
+
+  const handleViewProposalDetails = (proposalId: string, forVotes: number, againstVotes: number) => {
+    const total = forVotes + againstVotes;
+    const ratio = total > 0 ? ((forVotes / total) * 100).toFixed(1) : '0.0';
+    notifySuccess(`Proposal ${proposalId}: FOR ${forVotes}, AGAINST ${againstVotes}, FOR ratio ${ratio}%`);
   };
 
   return (
@@ -123,7 +165,7 @@ const Governance = () => {
                              <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--hyper-pink)', color: 'var(--hyper-pink)'}} onClick={() => handleVote(prop.id, false)} disabled={!canVote} title={!canVote ? 'Reputation required' : undefined}>Vote Against</button>
                            </div>
                          ) : (
-                           <button className="nfm-btn nfm-btn--ghost nfm-btn--sm border-white/10 text-muted">View Details</button>
+                            <button className="nfm-btn nfm-btn--ghost nfm-btn--sm border-white-10 text-muted" onClick={() => handleViewProposalDetails(prop.id, prop.forVotes, prop.againstVotes)}>View Details</button>
                          )}
                        </div>
                     </div>
@@ -132,7 +174,7 @@ const Governance = () => {
               })}
             </div>
             
-            <button className="nfm-btn-more">
+            <button className="nfm-btn-more" onClick={() => navigate('/dev')}>
               <ArrowRight size={14} /> Full Proposal Archive
             </button>
           </div>
@@ -148,14 +190,14 @@ const Governance = () => {
                <li>Active proposals run for exactly 7 epochs (approx. 3 days).</li>
                <li>Malicious proposals will result in the slashing of the creator's stake.</li>
              </ul>
-             <button className="nfm-btn nfm-btn--ghost w-full mt-4 text-xs">Download Charter</button>
+             <button className="nfm-btn nfm-btn--ghost w-full mt-4 text-xs" onClick={handleDownloadCharter}>Download Charter</button>
           </div>
 
           <div className="nfm-treasury-card">
              <div className="text-[10px] text-cyan font-bold uppercase tracking-[0.2em] mb-4">DAO Treasury Pool</div>
              <div className="font-display text-5xl font-bold text-primary mb-2">12.5M</div>
              <div className="text-xs font-mono text-muted uppercase tracking-widest mb-8">NVC Contained</div>
-             <button className="nfm-btn nfm-btn--primary nfm-btn--sm w-full">View Allocation</button>
+             <button className="nfm-btn nfm-btn--primary nfm-btn--sm w-full" onClick={() => navigate('/wallet')}>View Allocation</button>
              <div className="mt-4 text-[10px] text-muted italic">Managed by Neural Vault Protocol Smart Contract</div>
           </div>
 

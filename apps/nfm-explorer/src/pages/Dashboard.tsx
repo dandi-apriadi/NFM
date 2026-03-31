@@ -1,11 +1,23 @@
 import { Box, Flame, Zap, Database, TrendingUp, ArrowRight } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { p2pBan, p2pBulkBan, p2pBulkUnban, p2pUnban } from '../api/client';
 import NetworkChart from '../components/ui/NetworkChart';
 import { useAppData } from '../context/AppDataContext';
 
 const Dashboard = () => {
-  const { data, p2p, refresh, refreshPaused, setRefreshPaused } = useAppData();
+  const navigate = useNavigate();
+  const {
+    data,
+    p2p,
+    refresh,
+    refreshPaused,
+    setRefreshPaused,
+    notifySuccess,
+    notifyError,
+    requestPrompt,
+    requestConfirm,
+  } = useAppData();
   const [sortMode, setSortMode] = useState<'score-desc' | 'score-asc'>(() => {
     const saved = localStorage.getItem('nfm.dashboard.peerSortMode');
     return saved === 'score-asc' ? 'score-asc' : 'score-desc';
@@ -26,7 +38,6 @@ const Dashboard = () => {
   });
   const [pendingEndpoints, setPendingEndpoints] = useState<string[]>([]);
   const [batchPending, setBatchPending] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [lastBatchAction, setLastBatchAction] = useState<{
     ts: number;
     type: 'ban' | 'unban';
@@ -73,8 +84,47 @@ const Dashboard = () => {
       return [];
     }
   });
-  const DUMMY_STATUS = data.status;
-  const DUMMY_BLOCKS = data.blocks;
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const status = data.status;
+  const blocks = data.blocks;
+  const pendingCount = data.transactions.length;
+
+  const latestBlockTsMs = blocks[0]?.timestamp ?? 0;
+  const blockIntervalMs = 5 * 60 * 1000;
+  const nextEpochTsMs = latestBlockTsMs > 0 ? latestBlockTsMs + blockIntervalMs : 0;
+  const countdownSec = nextEpochTsMs > 0 ? Math.max(0, Math.floor((nextEpochTsMs - nowMs) / 1000)) : 0;
+  const countdownMinutes = Math.floor(countdownSec / 60);
+  const countdownSeconds = countdownSec % 60;
+  const epochProgressPct = blockIntervalMs > 0 && nextEpochTsMs > 0
+    ? Math.min(100, Math.max(0, Math.round(((blockIntervalMs - countdownSec * 1000) / blockIntervalMs) * 100)))
+    : 0;
+
+  const blocks24h = blocks.filter((block) => nowMs - block.timestamp <= 24 * 60 * 60 * 1000).length;
+  const burnPerBlock = status.blocks > 0 ? status.total_burned / status.blocks : 0;
+
+  const chartData = useMemo(() => {
+    const source = blocks.slice(0, 9);
+    if (source.length === 0) {
+      return [0];
+    }
+    return [...source].reverse().map((block) => block.transactions);
+  }, [blocks]);
+
+  const latestWindow = chartData.slice(-3);
+  const previousWindow = chartData.slice(-6, -3);
+  const latestAvg = latestWindow.length > 0
+    ? latestWindow.reduce((sum, value) => sum + value, 0) / latestWindow.length
+    : 0;
+  const previousAvg = previousWindow.length > 0
+    ? previousWindow.reduce((sum, value) => sum + value, 0) / previousWindow.length
+    : 0;
+  const activityDeltaPct = previousAvg > 0 ? ((latestAvg - previousAvg) / previousAvg) * 100 : 0;
   const p2pOnline = p2p.gossip_enabled && p2p.status === 'online';
   const bannedSet = new Set(p2p.banned_peers ?? []);
   const allPeerRows = useMemo(() => {
@@ -188,14 +238,6 @@ const Dashboard = () => {
     localStorage.setItem('nfm.dashboard.lastPauseDurationSec', String(lastPauseDurationSec));
   }, [lastPauseDurationSec]);
 
-  useEffect(() => {
-    if (!toast) {
-      return;
-    }
-    const timer = window.setTimeout(() => setToast(null), 2200);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
   const isEndpointPending = (endpoint: string) => pendingEndpoints.includes(endpoint);
 
   const pushOperatorLog = (action: string, detail: string) => {
@@ -217,7 +259,12 @@ const Dashboard = () => {
     if (bannedSet.has(endpoint) || inFlight) {
       return;
     }
-    if (!window.confirm(`Ban peer ${endpoint}?`)) {
+    const confirmed = await requestConfirm({
+      title: 'Ban Peer',
+      message: `Ban peer ${endpoint}?`,
+      confirmText: 'Ban',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -225,10 +272,10 @@ const Dashboard = () => {
       setEndpointPending(endpoint, true);
       await p2pBan(endpoint);
       await refresh();
-      setToast({ type: 'success', message: `Ban accepted: ${endpoint}` });
+      notifySuccess(`Ban accepted: ${endpoint}`);
       pushOperatorLog('BAN', endpoint);
     } catch (e) {
-      setToast({ type: 'error', message: e instanceof Error ? e.message : 'Failed to ban peer' });
+      notifyError(e instanceof Error ? e.message : 'Failed to ban peer');
       pushOperatorLog('BAN_FAIL', endpoint);
     } finally {
       setEndpointPending(endpoint, false);
@@ -239,7 +286,12 @@ const Dashboard = () => {
     if (inFlight) {
       return;
     }
-    if (!window.confirm(`Unban peer ${endpoint}?`)) {
+    const confirmed = await requestConfirm({
+      title: 'Unban Peer',
+      message: `Unban peer ${endpoint}?`,
+      confirmText: 'Unban',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -247,10 +299,10 @@ const Dashboard = () => {
       setEndpointPending(endpoint, true);
       await p2pUnban(endpoint);
       await refresh();
-      setToast({ type: 'success', message: `Unban accepted: ${endpoint}` });
+      notifySuccess(`Unban accepted: ${endpoint}`);
       pushOperatorLog('UNBAN', endpoint);
     } catch (e) {
-      setToast({ type: 'error', message: e instanceof Error ? e.message : 'Failed to unban peer' });
+      notifyError(e instanceof Error ? e.message : 'Failed to unban peer');
       pushOperatorLog('UNBAN_FAIL', endpoint);
     } finally {
       setEndpointPending(endpoint, false);
@@ -260,16 +312,16 @@ const Dashboard = () => {
   const handleExportRiskList = async () => {
     const payload = riskCandidates.join('\n');
     if (!payload) {
-      setToast({ type: 'success', message: 'No risk peers to export' });
+      notifySuccess('No risk peers to export');
       return;
     }
 
     try {
       await navigator.clipboard.writeText(payload);
-      setToast({ type: 'success', message: `Risk list copied (${riskCandidates.length})` });
+      notifySuccess(`Risk list copied (${riskCandidates.length})`);
       pushOperatorLog('EXPORT_RISK_LIST', `${riskCandidates.length} endpoints`);
     } catch {
-      setToast({ type: 'error', message: 'Clipboard write failed' });
+      notifyError('Clipboard write failed');
       pushOperatorLog('EXPORT_RISK_LIST_FAIL', `${riskCandidates.length} endpoints`);
     }
   };
@@ -280,10 +332,13 @@ const Dashboard = () => {
     }
 
     const sample = (p2p.banned_peers ?? []).slice(0, 5).join('\n');
-    const raw = window.prompt(
-      'Paste endpoints to ban (newline or comma separated, format host:port)',
-      sample,
-    );
+    const raw = await requestPrompt({
+      title: 'Import Ban List',
+      message: 'Paste endpoints to ban (newline or comma separated, format host:port)',
+      defaultValue: sample,
+      placeholder: '127.0.0.1:9000,127.0.0.1:9001',
+      confirmText: 'Parse List',
+    });
     if (raw === null) {
       return;
     }
@@ -298,17 +353,28 @@ const Dashboard = () => {
     );
 
     if (candidates.length === 0) {
-      setToast({ type: 'success', message: 'No valid new endpoints to import' });
+      notifySuccess('No valid new endpoints to import');
       return;
     }
 
-    const reasonInput = window.prompt('Optional reason for import batch action', 'imported list');
+    const reasonInput = await requestPrompt({
+      title: 'Import Ban List',
+      message: 'Optional reason for import batch action',
+      defaultValue: 'imported list',
+      placeholder: 'reason (optional)',
+      confirmText: 'Continue',
+    });
     if (reasonInput === null) {
       return;
     }
     const reasonSuffix = reasonInput.trim() ? ` | reason: ${reasonInput.trim()}` : '';
 
-    if (!window.confirm(`Import and ban ${candidates.length} endpoint(s)?`)) {
+    const confirmImport = await requestConfirm({
+      title: 'Confirm Import Ban',
+      message: `Import and ban ${candidates.length} endpoint(s)?`,
+      confirmText: 'Apply Ban',
+    });
+    if (!confirmImport) {
       return;
     }
 
@@ -320,7 +386,7 @@ const Dashboard = () => {
       success = response.accepted_count ?? 0;
       const acceptedEndpoints = response.endpoints ?? [];
       await refresh();
-      setToast({ type: 'success', message: `Import ban done: ${success}/${candidates.length}` });
+      notifySuccess(`Import ban done: ${success}/${candidates.length}`);
       pushOperatorLog('IMPORT_BAN_LIST', `${success}/${candidates.length}${reasonSuffix}`);
       if (acceptedEndpoints.length > 0) {
         setLastBatchAction({
@@ -343,9 +409,11 @@ const Dashboard = () => {
 
     const actionLabel = lastBatchAction.type === 'ban' ? 'unban' : 'ban';
     const reason = lastBatchAction.reason ? `\nOriginal reason: ${lastBatchAction.reason}` : '';
-    const ok = window.confirm(
-      `Undo last batch by applying ${actionLabel} to ${lastBatchAction.endpoints.length} endpoint(s)?${reason}`,
-    );
+    const ok = await requestConfirm({
+      title: 'Undo Last Batch',
+      message: `Undo last batch by applying ${actionLabel} to ${lastBatchAction.endpoints.length} endpoint(s)?${reason}`,
+      confirmText: 'Undo',
+    });
     if (!ok) {
       return;
     }
@@ -362,11 +430,11 @@ const Dashboard = () => {
         success = response.accepted_count ?? 0;
       }
       await refresh();
-      setToast({ type: 'success', message: `Undo batch done: ${success}/${lastBatchAction.endpoints.length}` });
+      notifySuccess(`Undo batch done: ${success}/${lastBatchAction.endpoints.length}`);
       pushOperatorLog('UNDO_BATCH', `${success}/${lastBatchAction.endpoints.length} (${lastBatchAction.type})`);
       setLastBatchAction(null);
     } catch (e) {
-      setToast({ type: 'error', message: e instanceof Error ? e.message : 'Undo batch failed' });
+      notifyError(e instanceof Error ? e.message : 'Undo batch failed');
       pushOperatorLog('UNDO_BATCH_FAIL', lastBatchAction.type);
     } finally {
       setPendingEndpoints([]);
@@ -376,7 +444,7 @@ const Dashboard = () => {
 
   const handleExportOperatorLog = () => {
     if (operatorLog.length === 0) {
-      setToast({ type: 'success', message: 'No operator log to export' });
+      notifySuccess('No operator log to export');
       return;
     }
 
@@ -395,23 +463,28 @@ const Dashboard = () => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    setToast({ type: 'success', message: `Operator log exported (${operatorLog.length})` });
+    notifySuccess(`Operator log exported (${operatorLog.length})`);
     pushOperatorLog('EXPORT_OPERATOR_LOG', `${operatorLog.length} entries`);
   };
 
-  const handleClearOperatorLog = () => {
+  const handleClearOperatorLog = async () => {
     if (operatorLog.length === 0) {
-      setToast({ type: 'success', message: 'Operator log already empty' });
+      notifySuccess('Operator log already empty');
       return;
     }
 
-    if (!window.confirm(`Clear ${operatorLog.length} operator log entries?`)) {
+    const confirmed = await requestConfirm({
+      title: 'Clear Operator Log',
+      message: `Clear ${operatorLog.length} operator log entries?`,
+      confirmText: 'Clear',
+    });
+    if (!confirmed) {
       return;
     }
 
     setOperatorLog([]);
     localStorage.removeItem('nfm.dashboard.operatorLog');
-    setToast({ type: 'success', message: 'Operator log cleared' });
+    notifySuccess('Operator log cleared');
   };
 
   const handleToggleRefreshPause = (nextPaused: boolean) => {
@@ -420,7 +493,7 @@ const Dashboard = () => {
       setPauseStartedAt(now);
       setRefreshPaused(true);
       pushOperatorLog('PAUSE_REFRESH', 'manual toggle');
-      setToast({ type: 'success', message: 'Auto-refresh paused' });
+      notifySuccess('Auto-refresh paused');
       return;
     }
 
@@ -434,7 +507,7 @@ const Dashboard = () => {
     setPauseStartedAt(null);
     setRefreshPaused(false);
     pushOperatorLog('RESUME_REFRESH', durationSec > 0 ? `${durationSec}s paused` : 'manual toggle');
-    setToast({ type: 'success', message: 'Auto-refresh resumed' });
+    notifySuccess('Auto-refresh resumed');
   };
 
   useEffect(() => {
@@ -464,7 +537,7 @@ const Dashboard = () => {
     }
 
     if (riskCandidates.length === 0) {
-      setToast({ type: 'success', message: 'No risk peers to ban' });
+      notifySuccess('No risk peers to ban');
       return;
     }
 
@@ -472,11 +545,22 @@ const Dashboard = () => {
     const moreSuffix = riskCandidates.length > 8 ? `\n...and ${riskCandidates.length - 8} more` : '';
     const confirmMessage = `Ban ${riskCandidates.length} risk peers now?\n\nTargets:\n- ${preview}${moreSuffix}`;
 
-    if (!window.confirm(confirmMessage)) {
+    const confirmed = await requestConfirm({
+      title: 'Batch Ban Risk',
+      message: confirmMessage,
+      confirmText: 'Ban All Risk',
+    });
+    if (!confirmed) {
       return;
     }
 
-    const reasonInput = window.prompt('Optional reason for this batch action (saved to operator log)', '');
+    const reasonInput = await requestPrompt({
+      title: 'Batch Ban Risk',
+      message: 'Optional reason for this batch action (saved to operator log)',
+      defaultValue: '',
+      placeholder: 'reason (optional)',
+      confirmText: 'Continue',
+    });
     if (reasonInput === null) {
       return;
     }
@@ -490,7 +574,7 @@ const Dashboard = () => {
       success = response.accepted_count ?? 0;
       const acceptedEndpoints = response.endpoints ?? [];
       await refresh();
-      setToast({ type: 'success', message: `Batch ban done: ${success}/${riskCandidates.length}` });
+      notifySuccess(`Batch ban done: ${success}/${riskCandidates.length}`);
       pushOperatorLog('BATCH_BAN_RISK', `${success}/${riskCandidates.length}${reasonSuffix}`);
       if (acceptedEndpoints.length > 0) {
         setLastBatchAction({
@@ -513,15 +597,26 @@ const Dashboard = () => {
 
     const candidates = p2p.banned_peers ?? [];
     if (candidates.length === 0) {
-      setToast({ type: 'success', message: 'No banned peers to unban' });
+      notifySuccess('No banned peers to unban');
       return;
     }
 
-    if (!window.confirm(`Unban all ${candidates.length} peers?`)) {
+    const confirmed = await requestConfirm({
+      title: 'Batch Unban',
+      message: `Unban all ${candidates.length} peers?`,
+      confirmText: 'Unban All',
+    });
+    if (!confirmed) {
       return;
     }
 
-    const reasonInput = window.prompt('Optional reason for this batch action (saved to operator log)', '');
+    const reasonInput = await requestPrompt({
+      title: 'Batch Unban',
+      message: 'Optional reason for this batch action (saved to operator log)',
+      defaultValue: '',
+      placeholder: 'reason (optional)',
+      confirmText: 'Continue',
+    });
     if (reasonInput === null) {
       return;
     }
@@ -535,7 +630,7 @@ const Dashboard = () => {
       success = response.accepted_count ?? 0;
       const acceptedEndpoints = response.endpoints ?? [];
       await refresh();
-      setToast({ type: 'success', message: `Batch unban done: ${success}/${candidates.length}` });
+      notifySuccess(`Batch unban done: ${success}/${candidates.length}`);
       pushOperatorLog('BATCH_UNBAN_ALL', `${success}/${candidates.length}${reasonSuffix}`);
       if (acceptedEndpoints.length > 0) {
         setLastBatchAction({
@@ -551,29 +646,8 @@ const Dashboard = () => {
     }
   };
 
-  const chartData = [45, 52, 48, 70, 85, 74, 90, 82, 95];
-
   return (
     <div className="animate-in">
-      {toast && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '18px',
-            right: '18px',
-            zIndex: 60,
-            borderRadius: '12px',
-            padding: '10px 12px',
-            border: '1px solid rgba(255,255,255,0.12)',
-            background: toast.type === 'success' ? 'rgba(13, 185, 122, 0.16)' : 'rgba(220, 38, 38, 0.16)',
-            color: 'var(--text-primary)',
-            fontSize: '12px',
-            backdropFilter: 'blur(6px)',
-          }}
-        >
-          {toast.message}
-        </div>
-      )}
       <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-8)' }}>
         <div>
           <h1 className="text-cyan">Network Dashboard</h1>
@@ -594,10 +668,10 @@ const Dashboard = () => {
         <div className="nfm-glass-card" style={{ marginBottom: 0 }}>
           <div className="nfm-stat-tile">
             <div className="nfm-stat-tile__icon nfm-stat-tile__icon--cyan"><Box /></div>
-            <div className="nfm-stat-tile__value">{DUMMY_STATUS.blocks.toLocaleString()}</div>
+            <div className="nfm-stat-tile__value">{status.blocks.toLocaleString()}</div>
             <div className="nfm-stat-tile__label">Total Blocks</div>
             <div className="nfm-stat-tile__trend nfm-stat-tile__trend--up">
-              <TrendingUp size={12} /> +12.4%
+              <TrendingUp size={12} /> 24h: +{blocks24h}
             </div>
           </div>
         </div>
@@ -605,10 +679,10 @@ const Dashboard = () => {
         <div className="nfm-glass-card nfm-glass-card--interactive" style={{ marginBottom: 0 }}>
           <div className="nfm-stat-tile">
             <div className="nfm-stat-tile__icon nfm-stat-tile__icon--purple"><Zap /></div>
-            <div className="nfm-stat-tile__value">24</div>
+            <div className="nfm-stat-tile__value">{pendingCount.toLocaleString()}</div>
             <div className="nfm-stat-tile__label">Pending Transactions</div>
             <div className="nfm-stat-tile__trend nfm-stat-tile__trend--up">
-              High Priority
+              {pendingCount > 0 ? 'High Priority' : 'Mempool Empty'}
             </div>
           </div>
         </div>
@@ -627,10 +701,10 @@ const Dashboard = () => {
         <div className="nfm-glass-card" style={{ marginBottom: 0 }}>
           <div className="nfm-stat-tile">
             <div className="nfm-stat-tile__icon nfm-stat-tile__icon--pink"><Flame /></div>
-            <div className="nfm-stat-tile__value">{DUMMY_STATUS.total_burned.toLocaleString()}</div>
+            <div className="nfm-stat-tile__value">{status.total_burned.toLocaleString()}</div>
             <div className="nfm-stat-tile__label">Total Burned (NVC)</div>
             <div className="nfm-stat-tile__trend nfm-stat-tile__trend--down">
-               Deflation Rate: 0.12%
+              Burn/Block: {burnPerBlock.toFixed(4)}
             </div>
           </div>
         </div>
@@ -640,12 +714,12 @@ const Dashboard = () => {
         <div className="nfm-glass-card" style={{ flex: 2, marginBottom: 0 }}>
           <div className="flex justify-between items-start mb-6">
             <div>
-              <h2 className="text-cyan text-lg">Hashrate Performance</h2>
-              <p className="text-xs text-muted">Network computational power over the last 24h.</p>
+              <h2 className="text-cyan text-lg">Recent Block Activity</h2>
+              <p className="text-xs text-muted">Transactions per block from latest on-chain samples.</p>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-display text-primary">8.42 EH/s</div>
-              <div className="text-xs text-success">+5.2%</div>
+              <div className="text-2xl font-display text-primary">{latestAvg.toFixed(2)} tx/block</div>
+              <div className={`text-xs ${activityDeltaPct >= 0 ? 'text-success' : 'text-danger'}`}>{activityDeltaPct >= 0 ? '+' : ''}{activityDeltaPct.toFixed(1)}%</div>
             </div>
           </div>
           <NetworkChart data={chartData} color="var(--neon-cyan)" />
@@ -654,10 +728,10 @@ const Dashboard = () => {
         <div className="nfm-glass-card" style={{ flex: 1, marginBottom: 0 }}>
           <h2 className="text-purple text-lg mb-6">Next Epoch Countdown</h2>
           <div className="flex-col items-center justify-center p-8 gap-4" style={{ background: 'var(--surface-lowest)', borderRadius: 'var(--radius-lg)', textAlign: 'center' }}>
-            <div className="text-4xl font-display text-cyan">02:45:12</div>
+            <div className="text-4xl font-display text-cyan">{nextEpochTsMs > 0 ? `${countdownMinutes.toString().padStart(2, '0')}:${countdownSeconds.toString().padStart(2, '0')}` : '--:--'}</div>
             <div className="text-xs text-muted uppercase tracking-widest">Until Epoch Switch</div>
             <div className="nfm-progress mt-4">
-              <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: '65%' }}></div>
+              <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: `${epochProgressPct}%` }}></div>
             </div>
           </div>
         </div>
@@ -677,7 +751,7 @@ const Dashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {DUMMY_BLOCKS.slice(0, 5).map(block => (
+              {blocks.slice(0, 5).map(block => (
                 <tr key={block.index}>
                   <td className="font-mono text-cyan">#{block.index}</td>
                   <td className="font-mono">{block.hash.substring(0, 16)}...</td>
@@ -687,7 +761,7 @@ const Dashboard = () => {
               ))}
             </tbody>
           </table>
-          <button className="nfm-btn-more">
+          <button className="nfm-btn-more" onClick={() => navigate('/explorer')}>
             <ArrowRight size={14} /> View Network History
           </button>
         </div>
@@ -947,7 +1021,7 @@ const Dashboard = () => {
                 <span className="font-mono">{qualityStats.critical}</span>
               </div>
             </div>
-            <button className="nfm-btn-more" style={{ marginTop: 'var(--space-2)' }}>
+            <button className="nfm-btn-more" style={{ marginTop: 'var(--space-2)' }} onClick={() => navigate('/node')}>
               Explore Peer Mesh
             </button>
           </div>

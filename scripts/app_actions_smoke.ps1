@@ -1,5 +1,6 @@
 param(
-    [string]$BaseUrl = "http://127.0.0.1:3000"
+    [string]$BaseUrl = "http://127.0.0.1:3000",
+    [int]$Repeat = 1
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,6 +53,11 @@ function Assert-Status {
 
 Write-Host "=== NFM App Actions Smoke Test ===" -ForegroundColor Cyan
 Write-Host "Base URL: $BaseUrl" -ForegroundColor DarkCyan
+Write-Host "Repeat: $Repeat" -ForegroundColor DarkCyan
+
+if ($Repeat -lt 1) {
+    throw "Repeat must be >= 1"
+}
 
 $stateBefore = Invoke-JsonRequest -Method "GET" -Path "/api/app/state"
 Assert-Status -Result $stateBefore -Allowed @(200)
@@ -67,75 +73,85 @@ if ([string]::IsNullOrWhiteSpace($userAddress)) {
 Write-Host "User address: $userAddress" -ForegroundColor Yellow
 Write-Host "Initial balance: $startingBalance" -ForegroundColor Yellow
 
-# 1) Wallet transfer
-$transferAmount = 1.25
-$transferTarget = "nfm_smoke_receiver"
-$transferRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/wallet/transfer" -Body @{
-    from   = $userAddress
-    to     = $transferTarget
-    amount = $transferAmount
-}
-Assert-Status -Result $transferRes -Allowed @(200)
-Write-Host "[OK] Wallet transfer" -ForegroundColor Green
+for ($i = 1; $i -le $Repeat; $i++) {
+    Write-Host "-- Iteration $i/$Repeat --" -ForegroundColor Magenta
 
-# 2) Create governance proposal
-$proposalTitle = "Smoke Proposal $(Get-Date -Format 'yyyyMMdd-HHmmss')"
-$proposalRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/governance/proposal" -Body @{
-    title       = $proposalTitle
-    description = "Automated smoke proposal"
-    proposer    = $userAddress
-}
-Assert-Status -Result $proposalRes -Allowed @(200)
-$proposalId = [string]$proposalRes.Payload.proposal_id
-if ([string]::IsNullOrWhiteSpace($proposalId)) {
-    throw "proposal_id missing in governance proposal response"
-}
-Write-Host "[OK] Governance proposal created: $proposalId" -ForegroundColor Green
+    # 1) Wallet transfer
+    $transferAmount = 1.25
+    $transferTarget = "nfm_smoke_receiver_$i"
+    $transferRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/wallet/transfer" -Body @{
+        from   = $userAddress
+        to     = $transferTarget
+        amount = $transferAmount
+    }
+    Assert-Status -Result $transferRes -Allowed @(200)
+    Write-Host "[OK] Wallet transfer" -ForegroundColor Green
 
-# 3) Vote proposal (backend may require reputation > 0)
-$voteRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/governance/vote" -Body @{
-    proposal_id = $proposalId
-    approve     = $true
-    voter       = $userAddress
-}
-if ($voteRes.StatusCode -eq 200) {
-    Write-Host "[OK] Governance vote accepted" -ForegroundColor Green
-} elseif ($voteRes.StatusCode -eq 400 -and ($voteRes.Raw -match "No reputation")) {
-    Write-Host "[OK] Governance vote rejected as expected (No reputation)" -ForegroundColor DarkYellow
-} else {
-    Assert-Status -Result $voteRes -Allowed @(200)
-}
+    # 2) Create governance proposal
+    $proposalTitle = "Smoke Proposal $(Get-Date -Format 'yyyyMMdd-HHmmss')-it$i"
+    $proposalRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/governance/proposal" -Body @{
+        title       = $proposalTitle
+        description = "Automated smoke proposal"
+        proposer    = $userAddress
+    }
+    Assert-Status -Result $proposalRes -Allowed @(200)
+    $proposalId = [string]$proposalRes.Payload.proposal_id
+    if ([string]::IsNullOrWhiteSpace($proposalId)) {
+        throw "proposal_id missing in governance proposal response"
+    }
+    Write-Host "[OK] Governance proposal created: $proposalId" -ForegroundColor Green
 
-# 4) Claim quest
-$questRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/quest/claim" -Body @{
-    quest_id = "q-2"
-    address  = $userAddress
-}
-Assert-Status -Result $questRes -Allowed @(200)
-Write-Host "[OK] Quest claim" -ForegroundColor Green
+    # 3) Vote proposal (backend may require reputation > 0)
+    $voteRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/governance/vote" -Body @{
+        proposal_id = $proposalId
+        approve     = $true
+        voter       = $userAddress
+    }
+    if ($voteRes.StatusCode -eq 200) {
+        Write-Host "[OK] Governance vote accepted" -ForegroundColor Green
+    } elseif ($voteRes.StatusCode -eq 400 -and ($voteRes.Raw -match "No reputation")) {
+        Write-Host "[OK] Governance vote rejected as expected (No reputation)" -ForegroundColor DarkYellow
+    } else {
+        Assert-Status -Result $voteRes -Allowed @(200)
+    }
 
-# 5) Mystery extract
-$mysteryRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/mystery/extract" -Body @{
-    address = $userAddress
-}
-Assert-Status -Result $mysteryRes -Allowed @(200)
-Write-Host "[OK] Mystery extract" -ForegroundColor Green
+    # 4) Claim quest
+    $questRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/quest/claim" -Body @{
+        quest_id = "q-2"
+        address  = $userAddress
+    }
+    if ($questRes.StatusCode -eq 200) {
+        Write-Host "[OK] Quest claim" -ForegroundColor Green
+    } elseif ($questRes.StatusCode -eq 400 -and ($questRes.Raw -match "Completed" -or $questRes.Raw -match "sudah")) {
+        Write-Host "[OK] Quest claim skipped (already completed)" -ForegroundColor DarkYellow
+    } else {
+        Assert-Status -Result $questRes -Allowed @(200)
+    }
 
-# 6) Market purchase
-$purchaseRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/market/purchase" -Body @{
-    address = $userAddress
-    item_id = "smoke-item"
-    price   = 1.0
+    # 5) Mystery extract
+    $mysteryRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/mystery/extract" -Body @{
+        address = $userAddress
+    }
+    Assert-Status -Result $mysteryRes -Allowed @(200)
+    Write-Host "[OK] Mystery extract" -ForegroundColor Green
+
+    # 6) Market purchase
+    $purchaseRes = Invoke-JsonRequest -Method "POST" -Path "/api/app/market/purchase" -Body @{
+        address = $userAddress
+        item_id = "smoke-item-$i"
+        price   = 1.0
+    }
+    Assert-Status -Result $purchaseRes -Allowed @(200)
+    Write-Host "[OK] Market purchase" -ForegroundColor Green
 }
-Assert-Status -Result $purchaseRes -Allowed @(200)
-Write-Host "[OK] Market purchase" -ForegroundColor Green
 
 $stateAfter = Invoke-JsonRequest -Method "GET" -Path "/api/app/state"
 Assert-Status -Result $stateAfter -Allowed @(200)
 
 $endingProposals = @($stateAfter.Payload.proposals).Count
-if ($endingProposals -lt ($startingProposals + 1)) {
-    throw "Expected proposal count to increase (before=$startingProposals, after=$endingProposals)"
+$expectedMinProposals = $startingProposals + $Repeat
+if ($endingProposals -lt $expectedMinProposals) {
+    throw "Expected proposal count to increase by at least $Repeat (before=$startingProposals, after=$endingProposals)"
 }
 
 $endingBalance = [double]$stateAfter.Payload.user_profile.balance

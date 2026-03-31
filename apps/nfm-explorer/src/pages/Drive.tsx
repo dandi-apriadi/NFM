@@ -1,17 +1,32 @@
 import { HardDrive, Upload, Folder, File, Shield, Database, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
 
 const Drive = () => {
-  const { data } = useAppData();
+  const navigate = useNavigate();
+  const { data, notifyError } = useAppData();
   const DUMMY_DRIVE_FILES = data.drive_files;
+  const totalFragments = DUMMY_DRIVE_FILES.reduce((sum, file) => sum + file.fragments, 0);
+  const averageHealth = DUMMY_DRIVE_FILES.length > 0
+    ? Math.round(DUMMY_DRIVE_FILES.reduce((sum, file) => sum + file.health, 0) / DUMMY_DRIVE_FILES.length)
+    : 0;
+
+  const handleUpload = () => {
+    notifyError('Upload endpoint belum tersedia di backend');
+  };
+
+  const handleViewAllVaultFiles = () => {
+    sessionStorage.setItem('nfm_explorer_query', '/root/my-vault');
+    navigate('/explorer');
+  };
 
   return (
     <div className="animate-in">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-cyan flex items-center gap-2"><HardDrive /> NFM Distributed Drive</h1>
         <div className="flex gap-4 items-center">
-          <span className="text-muted text-sm font-mono hide-mobile">1.2 TB / 5 TB Used</span>
-          <button className="nfm-btn nfm-btn--primary nfm-btn--sm">
+          <span className="text-muted text-sm font-mono hide-mobile">{DUMMY_DRIVE_FILES.length} files indexed</span>
+          <button className="nfm-btn nfm-btn--primary nfm-btn--sm" onClick={handleUpload}>
             <Upload size={14} /> Upload File
           </button>
         </div>
@@ -30,8 +45,8 @@ const Drive = () => {
             <div className="nfm-storage-item">
                <span className="nfm-storage-item__label">Total Network Fragments</span>
                <div className="flex justify-between items-end">
-                 <span className="nfm-storage-item__value">4,285</span>
-                 <span className="text-muted text-xs mb-1">124 Global Nodes</span>
+                 <span className="nfm-storage-item__value">{totalFragments.toLocaleString()}</span>
+                 <span className="text-muted text-xs mb-1">{DUMMY_DRIVE_FILES.length} Vault Files</span>
                </div>
             </div>
 
@@ -45,15 +60,15 @@ const Drive = () => {
             
             <div className="mt-2">
               <div className="flex justify-between text-xs mb-2">
-                <span className="text-muted">Storage Capacity</span>
-                <span className="text-cyan font-mono">24%</span>
+                <span className="text-muted">Fragment Health</span>
+                <span className="text-cyan font-mono">{averageHealth}%</span>
               </div>
               <div className="nfm-progress" style={{ height: '6px' }}>
-                <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: '24%' }}></div>
+                <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: `${averageHealth}%` }}></div>
               </div>
               <div className="flex justify-between text-[10px] text-muted mt-2 uppercase tracking-wider">
-                <span>0 GB</span>
-                <span>5 TB Max</span>
+                <span>degraded</span>
+                <span>healthy</span>
               </div>
             </div>
           </div>
@@ -98,7 +113,7 @@ const Drive = () => {
             </tbody>
           </table>
           
-          <button className="nfm-btn-more">
+          <button className="nfm-btn-more" onClick={handleViewAllVaultFiles}>
             <ArrowRight size={14} /> View All Vault Files
           </button>
 

@@ -1,15 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
 import { Search, Bell, Menu, Wallet, Copy, Plus, LogOut, ChevronDown, ExternalLink, Check, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../../context/AppDataContext';
 
 const TopBar = () => {
-  const { data } = useAppData();
+  const navigate = useNavigate();
+  const { data, refreshPaused, notifySuccess, notifyError } = useAppData();
   const DUMMY_STATUS = data.status;
   const DUMMY_USER = data.user_profile;
   const DUMMY_WALLETS = data.wallets;
 
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const walletRef = useRef<HTMLDivElement>(null);
 
   const copyToClipboard = (text: string) => {
@@ -31,6 +34,22 @@ const TopBar = () => {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [isWalletOpen]);
 
+  const submitSearch = () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      return;
+    }
+    sessionStorage.setItem('nfm.explorer.searchQuery', query);
+    sessionStorage.setItem('nfm.marketplace.searchQuery', query);
+    navigate('/explorer');
+    notifySuccess(`Search applied: ${query}`);
+  };
+
+  const openAddressInExplorer = () => {
+    sessionStorage.setItem('nfm.explorer.searchQuery', DUMMY_USER.nfmAddress);
+    navigate('/explorer');
+  };
+
   return (
     <header className="nfm-topbar">
       <div className="nfm-topbar__left">
@@ -44,14 +63,30 @@ const TopBar = () => {
             type="text" 
             className="nfm-search__input" 
             placeholder="Search blocks, addresses, or assets..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitSearch();
+              }
+            }}
           />
         </div>
       </div>
 
       <div className="nfm-topbar__right">
-        <div className="nfm-node-status hide-mobile">
-          <div className={`nfm-status-dot nfm-status-dot--${DUMMY_STATUS.status.toLowerCase()}`}></div>
-          <span className="status-text">{DUMMY_STATUS.node}</span>
+        <div className="flex items-center gap-4 mr-4 hide-mobile">
+          <div className="flex items-center gap-2 px-3 py-1 bg-surface-lowest-40 border border-white-05 rounded-full">
+            <div className={`w-1.5 h-1.5 rounded-full ${!refreshPaused ? 'bg-success animate-pulse shadow-glow-success' : 'bg-warning'}`}></div>
+            <span className={`text-9px font-bold uppercase tracking-widest ${!refreshPaused ? 'text-success' : 'text-warning'}`}>
+              {!refreshPaused ? 'Telemetry Live' : 'Refresh Paused'}
+            </span>
+          </div>
+          <div className="nfm-node-status">
+            <div className={`nfm-status-dot nfm-status-dot--${DUMMY_STATUS.status.toLowerCase()}`}></div>
+            <span className="status-text">{DUMMY_STATUS.node}</span>
+          </div>
         </div>
 
         {/* Solana-Style Wallet Dropdown Container */}
@@ -84,11 +119,11 @@ const TopBar = () => {
 
               <div className="flex-col gap-5">
                 {/* Profile Header */}
-                <div className="p-5 bg-surface-lowest rounded-lg border border-white/5 text-center relative overflow-hidden">
+                <div className="p-5 bg-surface-lowest rounded-lg border border-white-05 text-center relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-2">
                     <div className="nfm-badge nfm-badge--success" style={{fontSize: '8px', padding: '1px 6px'}}>Active</div>
                   </div>
-                  <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-cyan-400 rounded-xl mx-auto mb-3 flex items-center justify-center text-xl font-bold border border-white/10 shadow-lg">
+                  <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-cyan-400 rounded-xl mx-auto mb-3 flex items-center justify-center text-xl font-bold border border-white-10 shadow-lg">
                     {DUMMY_USER.username.substring(1, 2).toUpperCase()}
                   </div>
                   <h3 className="text-base font-bold mb-1">{DUMMY_USER.username}</h3>
@@ -100,15 +135,17 @@ const TopBar = () => {
                     >
                       {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
                     </button>
-                    <ExternalLink size={12} className="cursor-pointer hover:text-cyan" />
+                    <button className="p-1 hover:text-cyan transition-colors" onClick={openAddressInExplorer}>
+                      <ExternalLink size={12} className="cursor-pointer hover:text-cyan" />
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2 bg-surface-low rounded-md border border-white/5 text-left">
+                    <div className="p-2 bg-surface-low rounded-md border border-white-05 text-left">
                       <div className="text-[10px] text-muted uppercase tracking-widest mb-1">NVC Balance</div>
                       <div className="text-cyan font-bold text-xs">{DUMMY_USER.balance.toLocaleString()}</div>
                     </div>
-                    <div className="p-2 bg-surface-low rounded-md border border-white/5 text-left">
+                    <div className="p-2 bg-surface-low rounded-md border border-white-05 text-left">
                       <div className="text-[10px] text-muted uppercase tracking-widest mb-1">Network Pos</div>
                       <div className="text-purple font-bold text-xs">Founder</div>
                     </div>
@@ -119,13 +156,13 @@ const TopBar = () => {
                 <div>
                   <div className="flex justify-between items-center mb-3 px-1">
                     <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Your Wallets</span>
-                    <button className="text-cyan text-[10px] flex items-center gap-1 hover:underline">
+                    <button className="text-cyan text-[10px] flex items-center gap-1 hover:underline" onClick={() => notifyError('Add wallet flow is not available from backend yet')}>
                       <Plus size={10} /> Add Wallet
                     </button>
                   </div>
                   <div className="flex-col gap-2">
                     {DUMMY_WALLETS.map(w => (
-                      <div key={w.address} className={`nfm-portfolio-item ${w.isActive ? 'border-purple/30 bg-surface-container' : 'opacity-60'}`} style={{padding: 'var(--space-2) var(--space-3)'}}>
+                      <div key={w.address} className={`nfm-portfolio-item ${w.isActive ? 'border-purple-30 bg-surface-container' : 'opacity-60'}`} style={{padding: 'var(--space-2) var(--space-3)'}}>
                         <div className="nfm-portfolio-item__info">
                           <div className="nfm-portfolio-item__icon" style={{width: '24px', height: '24px', fontSize: '10px'}}>{w.name.substring(0, 1)}</div>
                           <div>
@@ -143,7 +180,7 @@ const TopBar = () => {
                 </div>
 
                 {/* Footer Actions */}
-                <button className="nfm-btn nfm-btn--danger w-full nfm-btn--sm">
+                <button className="nfm-btn nfm-btn--danger w-full nfm-btn--sm" onClick={() => { setIsWalletOpen(false); notifySuccess('Wallet UI disconnected'); }}>
                   <LogOut size={14} /> Disconnect Wallet
                 </button>
               </div>

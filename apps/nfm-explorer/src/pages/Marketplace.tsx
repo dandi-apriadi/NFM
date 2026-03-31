@@ -1,18 +1,61 @@
+import { useEffect, useMemo, useState } from 'react';
 import { ShoppingCart, Search, Filter, Star, TrendingUp, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
+
+const MARKET_SEARCH_KEY = 'nfm.marketplace.searchQuery';
+type MarketFilter = 'ALL' | 'AI_SKILL' | 'NODE_LICENSE' | 'DATASET';
+const MARKET_FILTER_ORDER: MarketFilter[] = ['ALL', 'AI_SKILL', 'NODE_LICENSE', 'DATASET'];
 
 const Marketplace = () => {
   const navigate = useNavigate();
   const { data } = useAppData();
   const DUMMY_MARKET_ITEMS = data.market_items;
+  const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem(MARKET_SEARCH_KEY) || '');
+  const [activeFilter, setActiveFilter] = useState<MarketFilter>('ALL');
+
+  useEffect(() => {
+    sessionStorage.setItem(MARKET_SEARCH_KEY, searchQuery);
+  }, [searchQuery]);
+
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return DUMMY_MARKET_ITEMS.filter((item) => {
+      const matchesFilter = activeFilter === 'ALL' || item.type === activeFilter;
+      if (!matchesFilter) {
+        return false;
+      }
+
+      if (!q) {
+        return true;
+      }
+
+      return (
+        item.name.toLowerCase().includes(q) ||
+        item.creator.toLowerCase().includes(q) ||
+        item.type.toLowerCase().includes(q)
+      );
+    });
+  }, [DUMMY_MARKET_ITEMS, searchQuery, activeFilter]);
+
+  const cycleFilter = () => {
+    setActiveFilter((prev) => {
+      const currentIdx = MARKET_FILTER_ORDER.indexOf(prev);
+      return MARKET_FILTER_ORDER[(currentIdx + 1) % MARKET_FILTER_ORDER.length];
+    });
+  };
+
+  const clearMarketplaceFilters = () => {
+    setSearchQuery('');
+    setActiveFilter('ALL');
+  };
 
   return (
     <div className="animate-in">
       <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-8)' }}>
         <h1 className="text-cyan flex items-center gap-2"><ShoppingCart /> NFM Marketplace</h1>
         <div className="nfm-badge nfm-badge--pink">
-          <div className="nfm-badge__dot"></div> 1,245 Active Listings
+          <div className="nfm-badge__dot"></div> {filteredItems.length.toLocaleString()} Active Listings
         </div>
       </div>
 
@@ -24,10 +67,12 @@ const Marketplace = () => {
             type="text" 
             className="nfm-search__input" 
             placeholder="Search AI Skills, Node Licenses, or Datasets..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <button className="nfm-btn nfm-btn--ghost">
-          <Filter size={18} /> Filters
+        <button className="nfm-btn nfm-btn--ghost" onClick={cycleFilter}>
+          <Filter size={18} /> Filter: {activeFilter.replace('_', ' ')}
         </button>
       </div>
 
@@ -48,10 +93,12 @@ const Marketplace = () => {
       </div>
 
       {/* Grid */}
-      <h3 className="text-lg text-primary mb-4 border-b pb-2" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>Trending Listings</h3>
+      <h3 className="text-lg text-primary mb-4 border-b pb-2" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+        Trending Listings {activeFilter !== 'ALL' ? `(${activeFilter.replace('_', ' ')})` : ''}
+      </h3>
       
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--space-4)' }}>
-        {DUMMY_MARKET_ITEMS.map(item => (
+        {filteredItems.map(item => (
           <div key={item.id} className="nfm-glass-card nfm-glass-card--interactive" onClick={() => navigate(`/market/${item.id}`)} style={{ display: 'flex', flexDirection: 'column' }}>
             <div className={`nfm-badge nfm-badge--${item.type === 'AI_SKILL' ? 'cyan' : item.type === 'NODE_LICENSE' ? 'purple' : 'pink'} mb-4`} style={{ alignSelf: 'flex-start' }}>
               {item.type.replace('_', ' ')}
@@ -67,14 +114,22 @@ const Marketplace = () => {
                 </div>
                 <div className="font-mono text-cyan">{item.price} NVC</div>
               </div>
-              <button className="nfm-btn nfm-btn--ghost nfm-btn--sm">View</button>
+              <button
+                className="nfm-btn nfm-btn--ghost nfm-btn--sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/market/${item.id}`);
+                }}
+              >
+                View
+              </button>
             </div>
           </div>
         ))}
       </div>
       
-      <button className="nfm-btn-more">
-        <ArrowRight size={14} /> View All Listings
+      <button className="nfm-btn-more" onClick={clearMarketplaceFilters}>
+        <ArrowRight size={14} /> Reset Listing Filters
       </button>
     </div>
   );

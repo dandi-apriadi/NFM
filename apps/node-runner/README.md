@@ -34,6 +34,9 @@ cargo run --release
 
 # Windows
 .\run.ps1
+
+# Windows (force restart if already running)
+.\run.ps1 --restart
 ```
 
 ## Dashboard

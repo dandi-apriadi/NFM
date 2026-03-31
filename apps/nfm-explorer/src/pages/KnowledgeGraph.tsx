@@ -1,13 +1,42 @@
 import { useState } from 'react';
 import { Share2, FileText, Database, GitMerge, Search, LayoutTemplate, Activity, Network, Layers, ZoomIn, ZoomOut, Maximize2, ArrowRight, Box } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
 
 const KnowledgeGraph = () => {
-  const { data } = useAppData();
+  const navigate = useNavigate();
+  const { data, notifySuccess } = useAppData();
   const DUMMY_KG_CONCEPTS = data.kg_concepts;
 
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
   const [zoom, setZoom] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const totalNodes = DUMMY_KG_CONCEPTS.length;
+  const totalLinks = DUMMY_KG_CONCEPTS.reduce((sum, concept) => sum + concept.connections, 0);
+  const uniqueCategories = new Set(DUMMY_KG_CONCEPTS.map((concept) => concept.category));
+  const graphDensity = totalNodes > 1
+    ? Math.min(1, totalLinks / (totalNodes * (totalNodes - 1)))
+    : 0;
+
+  const filteredConcepts = DUMMY_KG_CONCEPTS.filter((concept) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) {
+      return true;
+    }
+    return concept.name.toLowerCase().includes(q) || concept.category.toLowerCase().includes(q) || concept.id.toLowerCase().includes(q);
+  });
+
+  const handleInspectNode = () => {
+    if (DUMMY_KG_CONCEPTS[0]?.id) {
+      sessionStorage.setItem('nfm_explorer_query', DUMMY_KG_CONCEPTS[0].id);
+    }
+    navigate('/explorer');
+  };
+
+  const handleRunDiscoveryAudit = () => {
+    notifySuccess(`Discovery audit completed: ${filteredConcepts.length} node(s) scanned`);
+  };
 
   return (
     <div className="animate-in">
@@ -19,10 +48,10 @@ const KnowledgeGraph = () => {
         </div>
         <div className="flex gap-4">
           <div className="nfm-badge nfm-badge--purple">
-            <div className="nfm-badge__dot"></div> 12,450 Nodes Synced
+            <div className="nfm-badge__dot"></div> {totalNodes.toLocaleString()} Nodes Synced
           </div>
           <div className="nfm-badge nfm-badge--cyan">
-            <div className="nfm-badge__dot"></div> 0.62 Graph Density
+            <div className="nfm-badge__dot"></div> {graphDensity.toFixed(2)} Graph Density
           </div>
         </div>
       </div>
@@ -35,10 +64,10 @@ const KnowledgeGraph = () => {
         marginBottom: 'var(--space-8)' 
       }}>
         {[
-          { label: 'Total Fragments', value: '12,450', icon: <Database size={16}/>, color: 'purple' },
-          { label: 'Logic Chains', value: '842', icon: <GitMerge size={16}/>, color: 'cyan' },
-          { label: 'Vector Clusters', value: '124', icon: <Layers size={16}/>, color: 'pink' },
-          { label: 'Sync Stability', value: '98.4%', icon: <Activity size={16}/>, color: 'success' },
+          { label: 'Total Fragments', value: totalNodes.toLocaleString(), icon: <Database size={16}/>, color: 'purple' },
+          { label: 'Logic Chains', value: totalLinks.toLocaleString(), icon: <GitMerge size={16}/>, color: 'cyan' },
+          { label: 'Vector Clusters', value: uniqueCategories.size.toLocaleString(), icon: <Layers size={16}/>, color: 'pink' },
+          { label: 'Search Results', value: filteredConcepts.length.toLocaleString(), icon: <Activity size={16}/>, color: 'success' },
         ].map((stat, idx) => (
           <div key={idx} className="nfm-glass-card" style={{ padding: 'var(--space-5)', marginBottom: 0 }}>
             <div className="flex items-center gap-3 mb-3">
@@ -95,7 +124,7 @@ const KnowledgeGraph = () => {
                 <div className="text-[10px] text-secondary mb-3">Cluster ID: 0x992cf882...</div>
                 <div className="flex justify-between items-center text-[10px]">
                    <span className="text-cyan font-mono">24 Links</span>
-                   <button className="text-purple hover:underline">Inspect Node</button>
+                   <button className="text-purple hover:underline" onClick={handleInspectNode}>Inspect Node</button>
                 </div>
               </div>
             </div>
@@ -153,11 +182,18 @@ const KnowledgeGraph = () => {
 
             <div className="nfm-search mb-6">
               <Search className="nfm-search__icon" size={16} />
-              <input type="text" className="nfm-search__input" placeholder="Search conceptual nodes..." style={{ height: '36px', fontSize: '13px' }}/>
+              <input
+                type="text"
+                className="nfm-search__input"
+                placeholder="Search conceptual nodes..."
+                style={{ height: '36px', fontSize: '13px' }}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
             
             <div className="flex-col gap-3">
-              {DUMMY_KG_CONCEPTS.map(concept => (
+              {filteredConcepts.map(concept => (
                 <div key={concept.id} className="nfm-glass-card--interactive p-4" style={{ background: 'var(--surface-lowest)', borderRadius: 'var(--radius-md)', borderLeft: `3px solid ${concept.category === 'CODE' ? 'var(--neon-cyan)' : concept.category === 'DOCUMENT' ? 'var(--sovereign-purple)' : 'var(--hyper-pink)'}` }}>
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-bold text-sm text-primary">{concept.name}</span>
@@ -177,12 +213,12 @@ const KnowledgeGraph = () => {
               ))}
             </div>
 
-            <button className="nfm-btn-more mt-6">
+            <button className="nfm-btn-more mt-6" onClick={() => navigate('/explorer')}>
               <ArrowRight size={14} /> Full Knowledge Base
             </button>
 
             <div className="mt-auto pt-8">
-               <button className="nfm-btn nfm-btn--secondary w-full">
+              <button className="nfm-btn nfm-btn--secondary w-full" onClick={handleRunDiscoveryAudit}>
                   <Activity size={16} /> Run Discovery Audit
                </button>
             </div>

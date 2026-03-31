@@ -2,6 +2,28 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.
 
 type Json = Record<string, unknown>;
 
+export interface ApiError extends Error {
+  code: string;
+  status: number;
+  details?: unknown;
+}
+
+function createApiError(status: number, payload: unknown): ApiError {
+  const body = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
+  const message = typeof body.error === 'string'
+    ? body.error
+    : typeof body.message === 'string'
+      ? body.message
+      : `HTTP ${status}`;
+
+  const err = new Error(message) as ApiError;
+  err.name = 'ApiError';
+  err.status = status;
+  err.code = typeof body.code === 'string' ? body.code : `HTTP_${status}`;
+  err.details = body;
+  return err;
+}
+
 async function request(path: string, method: 'GET' | 'POST', body?: Json) {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
@@ -13,8 +35,7 @@ async function request(path: string, method: 'GET' | 'POST', body?: Json) {
 
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const errorMessage = typeof payload?.error === 'string' ? payload.error : `HTTP ${res.status}`;
-    throw new Error(errorMessage);
+    throw createApiError(res.status, payload);
   }
 
   return payload;
@@ -53,6 +74,10 @@ export async function appPurchaseMarketItem(itemId: string, price: number, addre
     price,
     address,
   });
+}
+
+export async function appUpdateSettings(settings: Json) {
+  return request('/api/app/settings', 'POST', { settings });
 }
 
 export async function p2pSetSeeds(seeds: string[]) {

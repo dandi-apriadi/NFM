@@ -1,9 +1,67 @@
 import { Code, Terminal, Key, Database } from 'lucide-react';
+import { useState } from 'react';
 import { useAppData } from '../context/AppDataContext';
 
 const DevPortal = () => {
-  const { data } = useAppData();
+  const { data, refresh, requestConfirm, notifySuccess, notifyError } = useAppData();
   const DUMMY_API_DOCS = data.api_docs;
+  const [commandInput, setCommandInput] = useState('');
+  const [consoleLines, setConsoleLines] = useState<string[]>([
+    '$ nfm-cli query mempool --limit 5',
+    '[]',
+    '$ nfm-cli auth bio-zkp request --id user_01',
+    'Challenge generated. Awaiting smartphone signature...',
+  ]);
+
+  const appendConsole = (line: string) => {
+    setConsoleLines((prev) => [...prev, line].slice(-40));
+  };
+
+  const handleExecuteCommand = async () => {
+    const cmd = commandInput.trim();
+    if (!cmd) {
+      notifyError('Command is empty');
+      return;
+    }
+
+    appendConsole(`$ ${cmd}`);
+    if (cmd === 'refresh' || cmd === 'sync') {
+      await refresh();
+      appendConsole('State refreshed from backend');
+      notifySuccess('Command executed successfully');
+    } else if (cmd === 'help') {
+      appendConsole('Available commands: help, refresh, sync, status');
+      notifySuccess('Help rendered in console');
+    } else if (cmd === 'status') {
+      appendConsole(`Blocks=${data.status.blocks}, Peers=${data.status.peers}, Burned=${data.status.total_burned}`);
+      notifySuccess('Status snapshot generated');
+    } else {
+      appendConsole('Command recognized by UI shell only. Backend RPC bridge not available here yet.');
+      notifyError('Unknown command for current UI shell');
+    }
+
+    setCommandInput('');
+  };
+
+  const handleResetChainState = async () => {
+    const confirmed = await requestConfirm({
+      title: 'Reset Chain State',
+      message: 'This UI action is currently disabled. Use signed admin endpoint from secure console. Continue?',
+      confirmText: 'Acknowledge',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) {
+      return;
+    }
+    notifyError('Reset chain from Dev Portal UI is disabled for safety');
+  };
+
+  const handleGenerateKey = () => {
+    const generated = `nfm_dev_${Math.random().toString(36).slice(2, 12)}`;
+    appendConsole(`Generated local API key preview: ${generated}`);
+    notifySuccess('Local API key preview generated');
+  };
 
   return (
     <div className="animate-in">
@@ -25,23 +83,29 @@ const DevPortal = () => {
             </h2>
 
             <div className="font-mono text-sm p-4 rounded-md mb-4" style={{ background: '#000', height: '200px', overflowY: 'auto', border: '1px solid rgba(0, 245, 255, 0.2)' }}>
-              <div className="text-muted">$ nfm-cli query mempool --limit 5</div>
-              <div className="text-cyan mt-1 mb-3">{JSON.stringify([
-                { txid: "0x4f...a1", gas: 0.005, size: 245 },
-                { txid: "0x8e...9b", gas: 0.001, size: 120 }
-              ], null, 2)}</div>
-              
-              <div className="text-muted">$ nfm-cli auth bio-zkp request --id user_01</div>
-              <div className="text-success mt-1 mb-3">Challenge generated. Awaiting smartphone signature...</div>
-              
+              {consoleLines.map((line, idx) => (
+                <div key={idx} className={`${line.startsWith('$') ? 'text-muted' : 'text-cyan'} mt-1`}>{line}</div>
+              ))}
               <div className="flex items-center text-muted">
                  $ <span className="ml-2 w-2 h-4 bg-cyan animate-pulse inline-block"></span>
               </div>
             </div>
 
             <div className="flex gap-4">
-              <input type="text" className="nfm-search__input flex-1" placeholder="Enter command..." />
-              <button className="nfm-btn nfm-btn--primary">Execute</button>
+              <input
+                type="text"
+                className="nfm-search__input flex-1"
+                placeholder="Enter command..."
+                value={commandInput}
+                onChange={(e) => setCommandInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleExecuteCommand();
+                  }
+                }}
+              />
+              <button className="nfm-btn nfm-btn--primary" onClick={() => void handleExecuteCommand()}>Execute</button>
             </div>
           </div>
 
@@ -99,7 +163,7 @@ const DevPortal = () => {
               </li>
             </ul>
 
-            <button className="nfm-btn nfm-btn--ghost w-full mt-6 text-error hover:bg-error hover:text-white" style={{ borderColor: 'var(--error)' }}>
+            <button className="nfm-btn nfm-btn--ghost w-full mt-6 text-error hover:bg-error hover:text-white" style={{ borderColor: 'var(--error)' }} onClick={() => void handleResetChainState()}>
               Reset Chain State
             </button>
           </div>
@@ -110,7 +174,7 @@ const DevPortal = () => {
              </div>
              <h3 className="text-md text-primary mb-2 font-bold tracking-wider">API Keys</h3>
              <p className="text-xs text-muted mb-4">Manage your OAuth & programmatic credentials.</p>
-             <button className="nfm-btn nfm-btn--secondary w-full">Generate New Key</button>
+             <button className="nfm-btn nfm-btn--secondary w-full" onClick={handleGenerateKey}>Generate New Key</button>
           </div>
 
         </div>

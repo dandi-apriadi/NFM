@@ -275,6 +275,15 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
     let api_docs = vec![
         serde_json::json!({ "method": "GET", "path": "/api/status", "description": "Core node status and tokenomics", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/p2p/status", "description": "P2P gossip telemetry and peer health", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/p2p/seeds", "description": "List configured seed peers", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/p2p/seeds", "description": "Replace configured seed peers", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/p2p/banlist", "description": "List runtime banned peer endpoints", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/p2p/ban", "description": "Ban a peer endpoint from active mesh", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/p2p/unban", "description": "Remove peer endpoint from banlist", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/p2p/ban/bulk", "description": "Bulk ban peer endpoints", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/p2p/unban/bulk", "description": "Bulk unban peer endpoints", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/p2p/bootstrap", "description": "Trigger gossip bootstrap from configured seeds", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/p2p/sync", "description": "Trigger longest-chain sync now", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/blocks", "description": "Recent blocks", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/mempool", "description": "Pending intents", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/transfer/create", "description": "Queue a transfer intent", "authRequired": false }),
@@ -476,6 +485,10 @@ pub struct ApiState {
     pub status_cache: Arc<Mutex<Option<StatusCacheEntry>>>,
     /// Status ringkas P2P gossip untuk endpoint observability
     pub p2p_status: Arc<Mutex<serde_json::Value>>,
+    /// Daftar seed peers yang dapat diperbarui runtime
+    pub p2p_seed_peers: Arc<Mutex<Vec<String>>>,
+    /// Daftar endpoint peer yang di-ban oleh operator runtime
+    pub p2p_ban_peers: Arc<Mutex<Vec<String>>>,
     /// Penyimpanan snapshot brain di sled untuk persistensi antar restart
     pub brain_snapshot_store: Arc<Mutex<Option<sled::Db>>>,
 }
@@ -746,6 +759,232 @@ pub fn start_api_server(state: ApiState, port: u16) {
                 ("GET", "/api/p2p/status") => {
                     let status = state.p2p_status.lock().unwrap().clone();
                     (200, "application/json", status.to_string())
+                },
+                ("GET", "/api/p2p/seeds") => {
+                    let seeds = state.p2p_seed_peers.lock().unwrap().clone();
+                    (200, "application/json", serde_json::json!({
+                        "count": seeds.len(),
+                        "seeds": seeds
+                    }).to_string())
+                },
+                ("POST", "/api/p2p/seeds") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let mut parsed: Vec<String> = Vec::new();
+                    if let Some(arr) = data["seeds"].as_array() {
+                        for item in arr {
+                            if let Some(seed) = item.as_str() {
+                                let s = seed.trim();
+                                if !s.is_empty() {
+                                    parsed.push(s.to_string());
+                                }
+                            }
+                        }
+                    } else if let Some(csv) = data["seeds_csv"].as_str() {
+                        parsed = csv
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                    }
+
+                    let mut seeds = state.p2p_seed_peers.lock().unwrap();
+                    *seeds = parsed.clone();
+
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "count": parsed.len(),
+                        "seeds": parsed
+                    }).to_string())
+                },
+                ("GET", "/api/p2p/banlist") => {
+                    let banned = state.p2p_ban_peers.lock().unwrap().clone();
+                    (200, "application/json", serde_json::json!({
+                        "count": banned.len(),
+                        "peers": banned
+                    }).to_string())
+                },
+                ("POST", "/api/p2p/ban") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                    let endpoint = data["endpoint"].as_str().unwrap_or("").trim().to_string();
+
+                    if endpoint.is_empty() || !endpoint.contains(':') {
+                        (400, "application/json", serde_json::json!({
+                            "error": "Missing or invalid field: endpoint (expected host:port)"
+                        }).to_string())
+                    } else {
+                        {
+                            let mut ban = state.p2p_ban_peers.lock().unwrap();
+                            if !ban.iter().any(|p| p == &endpoint) {
+                                ban.push(endpoint.clone());
+                            }
+                        }
+                        let cmd = format!("COMMAND_P2P_BAN:{}", endpoint);
+                        state.block_tx.send(cmd).ok();
+                        (202, "application/json", serde_json::json!({
+                            "status": "accepted",
+                            "action": "ban",
+                            "endpoint": endpoint
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/p2p/unban") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                    let endpoint = data["endpoint"].as_str().unwrap_or("").trim().to_string();
+
+                    if endpoint.is_empty() || !endpoint.contains(':') {
+                        (400, "application/json", serde_json::json!({
+                            "error": "Missing or invalid field: endpoint (expected host:port)"
+                        }).to_string())
+                    } else {
+                        {
+                            let mut ban = state.p2p_ban_peers.lock().unwrap();
+                            ban.retain(|p| p != &endpoint);
+                        }
+                        let cmd = format!("COMMAND_P2P_UNBAN:{}", endpoint);
+                        state.block_tx.send(cmd).ok();
+                        (202, "application/json", serde_json::json!({
+                            "status": "accepted",
+                            "action": "unban",
+                            "endpoint": endpoint
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/p2p/ban/bulk") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let mut parsed: Vec<String> = Vec::new();
+                    if let Some(arr) = data["endpoints"].as_array() {
+                        for item in arr {
+                            if let Some(endpoint) = item.as_str() {
+                                let e = endpoint.trim();
+                                if !e.is_empty() && e.contains(':') {
+                                    parsed.push(e.to_string());
+                                }
+                            }
+                        }
+                    } else if let Some(csv) = data["endpoints_csv"].as_str() {
+                        parsed = csv
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty() && s.contains(':'))
+                            .collect();
+                    }
+
+                    parsed.sort();
+                    parsed.dedup();
+
+                    if parsed.is_empty() {
+                        (400, "application/json", serde_json::json!({
+                            "error": "Missing or invalid field: endpoints (expected host:port list)"
+                        }).to_string())
+                    } else {
+                        let mut accepted = Vec::new();
+                        {
+                            let mut ban = state.p2p_ban_peers.lock().unwrap();
+                            for endpoint in &parsed {
+                                if !ban.iter().any(|p| p == endpoint) {
+                                    ban.push(endpoint.clone());
+                                    accepted.push(endpoint.clone());
+                                }
+                            }
+                        }
+
+                        for endpoint in &accepted {
+                            let cmd = format!("COMMAND_P2P_BAN:{}", endpoint);
+                            state.block_tx.send(cmd).ok();
+                        }
+
+                        (202, "application/json", serde_json::json!({
+                            "status": "accepted",
+                            "action": "ban_bulk",
+                            "requested_count": parsed.len(),
+                            "accepted_count": accepted.len(),
+                            "endpoints": accepted
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/p2p/unban/bulk") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let mut parsed: Vec<String> = Vec::new();
+                    if let Some(arr) = data["endpoints"].as_array() {
+                        for item in arr {
+                            if let Some(endpoint) = item.as_str() {
+                                let e = endpoint.trim();
+                                if !e.is_empty() && e.contains(':') {
+                                    parsed.push(e.to_string());
+                                }
+                            }
+                        }
+                    } else if let Some(csv) = data["endpoints_csv"].as_str() {
+                        parsed = csv
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty() && s.contains(':'))
+                            .collect();
+                    }
+
+                    parsed.sort();
+                    parsed.dedup();
+
+                    if parsed.is_empty() {
+                        (400, "application/json", serde_json::json!({
+                            "error": "Missing or invalid field: endpoints (expected host:port list)"
+                        }).to_string())
+                    } else {
+                        let mut accepted = Vec::new();
+                        {
+                            let mut ban = state.p2p_ban_peers.lock().unwrap();
+                            for endpoint in &parsed {
+                                if ban.iter().any(|p| p == endpoint) {
+                                    ban.retain(|p| p != endpoint);
+                                    accepted.push(endpoint.clone());
+                                }
+                            }
+                        }
+
+                        for endpoint in &accepted {
+                            let cmd = format!("COMMAND_P2P_UNBAN:{}", endpoint);
+                            state.block_tx.send(cmd).ok();
+                        }
+
+                        (202, "application/json", serde_json::json!({
+                            "status": "accepted",
+                            "action": "unban_bulk",
+                            "requested_count": parsed.len(),
+                            "accepted_count": accepted.len(),
+                            "endpoints": accepted
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/p2p/bootstrap") => {
+                    let seeds = state.p2p_seed_peers.lock().unwrap().clone();
+                    let payload = seeds.join(",");
+                    let cmd = format!("COMMAND_P2P_BOOTSTRAP:{}", payload);
+                    state.block_tx.send(cmd).ok();
+                    (202, "application/json", serde_json::json!({
+                        "status": "accepted",
+                        "action": "bootstrap",
+                        "seed_count": seeds.len()
+                    }).to_string())
+                },
+                ("POST", "/api/p2p/sync") => {
+                    state.block_tx.send("COMMAND_P2P_SYNC".to_string()).ok();
+                    (202, "application/json", serde_json::json!({
+                        "status": "accepted",
+                        "action": "sync"
+                    }).to_string())
                 },
                 ("GET", "/api/app/state") => {
                     let payload = build_frontend_app_state(&state);
@@ -2542,10 +2781,14 @@ mod tests {
                 "peer_count": 0,
                 "known_peers": [],
                 "seed_count": 0,
+                "ban_count": 0,
+                "banned_peers": [],
                 "last_sync_unix": 0,
                 "chain_blocks": 0,
                 "status": "inactive"
             }))),
+            p2p_seed_peers: Arc::new(Mutex::new(Vec::new())),
+            p2p_ban_peers: Arc::new(Mutex::new(Vec::new())),
             brain_snapshot_store: Arc::new(Mutex::new(None)),
         };
 
@@ -2652,6 +2895,198 @@ mod tests {
 
         assert_eq!(status, 200);
         assert!(body.contains("peer_count"));
+    }
+
+    #[test]
+    fn test_p2p_bulk_ban_mixed_payload_dedupes_and_accepts_valid_only() {
+        let secret = "test_secret_p2p_bulk_ban_mixed";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "endpoints": [
+                "127.0.0.1:9000",
+                "127.0.0.1:9000",
+                " 127.0.0.1:9001 ",
+                "",
+                "invalid"
+            ]
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/p2p/ban/bulk", &body, &[]);
+        assert_eq!(status, 202);
+
+        let response_json: serde_json::Value =
+            serde_json::from_str(&response_body).expect("valid json response");
+        assert_eq!(response_json["action"], "ban_bulk");
+        assert_eq!(response_json["requested_count"].as_u64().unwrap_or(0), 2);
+        assert_eq!(response_json["accepted_count"].as_u64().unwrap_or(0), 2);
+
+        let endpoints = response_json["endpoints"].as_array().cloned().unwrap_or_default();
+        assert_eq!(endpoints.len(), 2);
+
+        let (ban_status, ban_body) = send_get(port, "/api/p2p/banlist", &[]);
+        assert_eq!(ban_status, 200);
+        assert!(ban_body.contains("127.0.0.1:9000"));
+        assert!(ban_body.contains("127.0.0.1:9001"));
+    }
+
+    #[test]
+    fn test_p2p_bulk_unban_accepts_only_currently_banned_endpoints() {
+        let secret = "test_secret_p2p_bulk_unban_mixed";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let seed_ban_body = serde_json::json!({
+            "endpoints": ["127.0.0.1:9010", "127.0.0.1:9011"]
+        })
+        .to_string();
+        let (seed_status, _) = send_post(port, "/api/p2p/ban/bulk", &seed_ban_body, &[]);
+        assert_eq!(seed_status, 202);
+
+        let body = serde_json::json!({
+            "endpoints": [
+                "127.0.0.1:9010",
+                "127.0.0.1:9010",
+                "127.0.0.1:9999",
+                "invalid"
+            ]
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/p2p/unban/bulk", &body, &[]);
+        assert_eq!(status, 202);
+
+        let response_json: serde_json::Value =
+            serde_json::from_str(&response_body).expect("valid json response");
+        assert_eq!(response_json["action"], "unban_bulk");
+        assert_eq!(response_json["requested_count"].as_u64().unwrap_or(0), 2);
+        assert_eq!(response_json["accepted_count"].as_u64().unwrap_or(0), 1);
+
+        let (ban_status, ban_body) = send_get(port, "/api/p2p/banlist", &[]);
+        assert_eq!(ban_status, 200);
+        assert!(!ban_body.contains("127.0.0.1:9010"));
+        assert!(ban_body.contains("127.0.0.1:9011"));
+    }
+
+    #[test]
+    fn test_p2p_bulk_ban_supports_endpoints_csv_payload() {
+        let secret = "test_secret_p2p_bulk_ban_csv";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "endpoints_csv": "127.0.0.1:9020, invalid, 127.0.0.1:9021, 127.0.0.1:9021"
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/p2p/ban/bulk", &body, &[]);
+        assert_eq!(status, 202);
+
+        let response_json: serde_json::Value =
+            serde_json::from_str(&response_body).expect("valid json response");
+        assert_eq!(response_json["requested_count"].as_u64().unwrap_or(0), 2);
+        assert_eq!(response_json["accepted_count"].as_u64().unwrap_or(0), 2);
+    }
+
+    #[test]
+    fn test_p2p_bulk_ban_rejects_empty_or_invalid_payload() {
+        let secret = "test_secret_p2p_bulk_ban_invalid";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "endpoints": ["", "invalid", "also_invalid"]
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/p2p/ban/bulk", &body, &[]);
+        assert_eq!(status, 400);
+        assert!(response_body.contains("Missing or invalid field: endpoints"));
+    }
+
+    #[test]
+    fn test_p2p_bulk_ban_keeps_accepted_contract_when_command_channel_disconnected() {
+        let secret = "test_secret_p2p_bulk_ban_disconnected";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        // start_test_api_server intentionally drops receiver, simulating disconnected runtime command channel.
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "endpoints": ["127.0.0.1:9030", "127.0.0.1:9031"]
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/p2p/ban/bulk", &body, &[]);
+        assert_eq!(status, 202);
+
+        let response_json: serde_json::Value =
+            serde_json::from_str(&response_body).expect("valid json response");
+        assert_eq!(response_json["action"], "ban_bulk");
+        assert_eq!(response_json["accepted_count"].as_u64().unwrap_or(0), 2);
+
+        let (ban_status, ban_body) = send_get(port, "/api/p2p/banlist", &[]);
+        assert_eq!(ban_status, 200);
+        assert!(ban_body.contains("127.0.0.1:9030"));
+        assert!(ban_body.contains("127.0.0.1:9031"));
+    }
+
+    #[test]
+    fn test_p2p_bulk_unban_keeps_accepted_contract_when_command_channel_disconnected() {
+        let secret = "test_secret_p2p_bulk_unban_disconnected";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let seed_ban_body = serde_json::json!({
+            "endpoints": ["127.0.0.1:9040", "127.0.0.1:9041"]
+        })
+        .to_string();
+        let (seed_status, _) = send_post(port, "/api/p2p/ban/bulk", &seed_ban_body, &[]);
+        assert_eq!(seed_status, 202);
+
+        let unban_body = serde_json::json!({
+            "endpoints": ["127.0.0.1:9040", "127.0.0.1:9041"]
+        })
+        .to_string();
+        let (status, response_body) = send_post(port, "/api/p2p/unban/bulk", &unban_body, &[]);
+        assert_eq!(status, 202);
+
+        let response_json: serde_json::Value =
+            serde_json::from_str(&response_body).expect("valid json response");
+        assert_eq!(response_json["action"], "unban_bulk");
+        assert_eq!(response_json["accepted_count"].as_u64().unwrap_or(0), 2);
+
+        let (ban_status, ban_body) = send_get(port, "/api/p2p/banlist", &[]);
+        assert_eq!(ban_status, 200);
+        assert!(!ban_body.contains("127.0.0.1:9040"));
+        assert!(!ban_body.contains("127.0.0.1:9041"));
     }
 
     #[test]

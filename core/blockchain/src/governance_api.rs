@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Langkah 4 Governance API Module
 //! Provides REST/gRPC-ready interfaces for learning windows, intent voting, and slashing
 
@@ -151,10 +153,9 @@ impl GovernanceApiService {
         let window = self.governance
             .learning_windows
             .active_windows()
-            .iter()
+            .into_iter()
             .find(|w| w.id == req.window_id)
-            .ok_or("Window not found")?
-            .clone();
+            .ok_or("Window not found")?;
 
         Ok(LearningWindowResponse {
             window_id: window.id,

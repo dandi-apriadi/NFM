@@ -6,27 +6,48 @@ import { appPurchaseMarketItem } from '../api/client';
 const AssetDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { data, refresh } = useAppData();
+  const { data, refresh, requestPrompt, notifySuccess, notifyError } = useAppData();
   const DUMMY_MARKET_ITEMS = data.market_items;
-  
-  const asset = DUMMY_MARKET_ITEMS.find(item => item.id === id) || {
-    id: 'm-featured',
-    name: 'Genesis Node Architect (AI Skill)',
-    creator: '@founder',
-    price: 1250,
-    type: 'AI_SKILL',
-    sales: 12,
-    rating: 5.0
-  };
+
+  const asset = DUMMY_MARKET_ITEMS.find(item => item.id === id);
 
   const handlePurchase = async () => {
+    if (!asset) {
+      notifyError('Asset not found in backend listing');
+      return;
+    }
     try {
       await appPurchaseMarketItem(asset.id, asset.price, data.user_profile.nfmAddress);
       await refresh();
-      window.alert('Purchase successful');
+      notifySuccess('Purchase successful');
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Purchase failed');
+      notifyError(e instanceof Error ? e.message : 'Purchase failed');
     }
+  };
+
+  const handleOffer = async () => {
+    if (!asset) {
+      notifyError('Asset not found in backend listing');
+      return;
+    }
+
+    const input = await requestPrompt({
+      title: 'Submit Offer',
+      message: `Enter your offer for ${asset.name} (NVC)`,
+      placeholder: String(asset.price),
+      confirmText: 'Submit Offer',
+    });
+    if (input === null) {
+      return;
+    }
+
+    const offer = Number(input);
+    if (!Number.isFinite(offer) || offer <= 0) {
+      notifyError('Invalid offer amount');
+      return;
+    }
+
+    notifySuccess(`Offer of ${offer.toLocaleString('en-US')} NVC queued for manual review`);
   };
 
   return (
@@ -35,7 +56,19 @@ const AssetDetail = () => {
         <ArrowLeft size={18} /> Back to Market
       </button>
 
-      <div className="flex gap-8 wrap" style={{ flexWrap: 'wrap' }}>
+      {!asset && (
+        <div className="nfm-glass-card" style={{ marginBottom: 'var(--space-6)' }}>
+          <h2 className="text-primary" style={{ marginBottom: 'var(--space-2)' }}>Asset Not Found</h2>
+          <p className="text-muted text-sm" style={{ marginBottom: 'var(--space-4)' }}>
+            Item `{id}` tidak ada di listing backend saat ini.
+          </p>
+          <button className="nfm-btn nfm-btn--primary" onClick={() => navigate('/market')}>
+            Kembali ke Marketplace
+          </button>
+        </div>
+      )}
+
+      {asset && <div className="flex gap-8 wrap" style={{ flexWrap: 'wrap' }}>
         {/* Visual / Metadata Area */}
         <div style={{ flex: '1 1 350px' }}>
           <div className="nfm-glass-card nfm-glass-card--glow-cyan mb-6" style={{ height: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle at center, rgba(0,245,255,0.15), transparent)' }}>
@@ -83,7 +116,7 @@ const AssetDetail = () => {
                   <button className="nfm-btn nfm-btn--primary nfm-btn--lg" style={{ flex: 1 }} onClick={handlePurchase}>
                     <ShoppingCart size={20} /> Purchase Now
                  </button>
-                 <button className="nfm-btn nfm-btn--secondary nfm-btn--lg">
+                    <button className="nfm-btn nfm-btn--secondary nfm-btn--lg" onClick={() => void handleOffer()}>
                     Offer
                  </button>
               </div>
@@ -96,7 +129,7 @@ const AssetDetail = () => {
           </div>
         </div>
 
-      </div>
+      </div>}
     </div>
   );
 };

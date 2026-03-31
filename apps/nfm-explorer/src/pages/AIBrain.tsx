@@ -1,9 +1,48 @@
 import { Brain, Bot, Terminal, Send, RefreshCw, Layers } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useAppData } from '../context/AppDataContext';
 
 const AIBrain = () => {
-  const { data } = useAppData();
+  const { data, refresh, notifySuccess, notifyError } = useAppData();
   const DUMMY_AI_TASKS = data.ai_tasks;
+  const [taskInput, setTaskInput] = useState('');
+  const [conversation, setConversation] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([
+    {
+      role: 'user',
+      text: 'Please analyze the recent network traffic for any anomalies and summarize the findings.',
+    },
+    {
+      role: 'ai',
+      text: 'Traffic volume is within normal parameters. 3 minor anomaly events were blocked, and sync efficiency improved this epoch.',
+    },
+  ]);
+
+  const queueSummary = useMemo(() => {
+    const running = DUMMY_AI_TASKS.filter((task) => task.status === 'RUNNING').length;
+    const queued = DUMMY_AI_TASKS.filter((task) => task.status === 'QUEUED').length;
+    return { running, queued };
+  }, [DUMMY_AI_TASKS]);
+
+  const handleSubmitTask = () => {
+    const text = taskInput.trim();
+    if (!text) {
+      notifyError('Task command is empty');
+      return;
+    }
+
+    setConversation((prev) => [
+      ...prev,
+      { role: 'user', text },
+      { role: 'ai', text: `Task queued: "${text}". Monitor progress in Autopilot Queue.` },
+    ]);
+    setTaskInput('');
+    notifySuccess('Task submitted to AI queue');
+  };
+
+  const handleRefreshQueue = async () => {
+    await refresh();
+    notifySuccess('Autopilot queue refreshed');
+  };
 
   return (
     <div className="animate-in">
@@ -24,25 +63,22 @@ const AIBrain = () => {
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', paddingRight: 'var(--space-2)' }}>
-            {/* User Message */}
-            <div className="flex gap-3" style={{ alignSelf: 'flex-end', maxWidth: '85%' }}>
-              <div style={{ background: 'var(--surface-high)', padding: '12px 16px', borderRadius: '16px 16px 0 16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                Please analyze the recent network traffic for any anomalies and summarize the findings.
-              </div>
-            </div>
-
-            {/* AI Message */}
-            <div className="flex gap-3" style={{ alignSelf: 'flex-start', maxWidth: '85%' }}>
-              <div className="nfm-avatar" style={{ width: 32, height: 32, fontSize: '10px' }}>AI</div>
-              <div style={{ background: 'rgba(0, 245, 255, 0.05)', border: '1px solid rgba(0, 245, 255, 0.15)', padding: '12px 16px', borderRadius: '16px 16px 16px 0' }}>
-                <p className="mb-2">I have analyzed the network traffic for the past 24 hours. Here are the findings:</p>
-                <ul style={{ paddingLeft: '20px', color: 'var(--text-secondary)' }}>
-                  <li>Traffic volume is within normal parameters.</li>
-                  <li>Detected 3 minor anomalies originating from unknown IPs. These were automatically blocked by the firewall.</li>
-                  <li>Node synchronization efficiency has improved by 4% since the last epoch.</li>
-                </ul>
-              </div>
-            </div>
+            {conversation.map((msg, idx) => (
+              msg.role === 'user' ? (
+                <div key={idx} className="flex gap-3" style={{ alignSelf: 'flex-end', maxWidth: '85%' }}>
+                  <div style={{ background: 'var(--surface-high)', padding: '12px 16px', borderRadius: '16px 16px 0 16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    {msg.text}
+                  </div>
+                </div>
+              ) : (
+                <div key={idx} className="flex gap-3" style={{ alignSelf: 'flex-start', maxWidth: '85%' }}>
+                  <div className="nfm-avatar" style={{ width: 32, height: 32, fontSize: '10px' }}>AI</div>
+                  <div style={{ background: 'rgba(0, 245, 255, 0.05)', border: '1px solid rgba(0, 245, 255, 0.15)', padding: '12px 16px', borderRadius: '16px 16px 16px 0' }}>
+                    {msg.text}
+                  </div>
+                </div>
+              )
+            ))}
             
             {/* AI Action Execution */}
             <div className="flex gap-3" style={{ alignSelf: 'flex-start', maxWidth: '85%', marginTop: '-8px' }}>
@@ -55,8 +91,21 @@ const AIBrain = () => {
 
           <div className="mt-4 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             <div className="nfm-search">
-              <input type="text" className="nfm-search__input" placeholder="Give the AI Brain a task..." style={{ paddingLeft: '16px', paddingRight: '48px' }} />
-              <button className="nfm-btn nfm-btn--primary" style={{ position: 'absolute', right: '4px', top: '4px', bottom: '4px', padding: '0 12px' }}>
+              <input
+                type="text"
+                className="nfm-search__input"
+                placeholder="Give the AI Brain a task..."
+                style={{ paddingLeft: '16px', paddingRight: '48px' }}
+                value={taskInput}
+                onChange={(e) => setTaskInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSubmitTask();
+                  }
+                }}
+              />
+              <button className="nfm-btn nfm-btn--primary" style={{ position: 'absolute', right: '4px', top: '4px', bottom: '4px', padding: '0 12px' }} onClick={handleSubmitTask}>
                 <Send size={16} />
               </button>
             </div>
@@ -69,7 +118,10 @@ const AIBrain = () => {
           <div className="nfm-glass-card nfm-glass-card--glow-cyan">
             <h2 className="text-lg text-primary mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2"><Layers size={20}/> Autopilot Queue</div>
-              <RefreshCw size={16} className="text-muted" style={{cursor: 'pointer'}} />
+              <div className="flex items-center gap-2">
+                <span className="text-10px text-muted uppercase tracking-wider">{queueSummary.running} running / {queueSummary.queued} queued</span>
+                <RefreshCw size={16} className="text-muted" style={{cursor: 'pointer'}} onClick={() => void handleRefreshQueue()} />
+              </div>
             </h2>
             
             <div className="flex-col gap-3">

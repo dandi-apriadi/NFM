@@ -1,14 +1,96 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Activity, Server, Cpu, Globe, Zap, ShieldCheck, X, ArrowRight, Hourglass, Flame, Trophy, TrendingDown, Wallet } from 'lucide-react';
 import type { Block } from '../types';
 import { useAppData } from '../context/AppDataContext';
 
+const EXPLORER_SEARCH_KEY = 'nfm.explorer.searchQuery';
+
+const formatAgo = (timestampMs: number) => {
+  const sec = Math.max(0, Math.floor((Date.now() - timestampMs) / 1000));
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hour = Math.floor(min / 60);
+  return `${hour}h ago`;
+};
+
 const Explorer = () => {
-  const { data } = useAppData();
+  const { data, p2p } = useAppData();
   const DUMMY_BLOCKS = data.blocks;
   const DUMMY_TRANSACTIONS = data.transactions;
 
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
+  const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem(EXPLORER_SEARCH_KEY) || '');
+
+  useEffect(() => {
+    sessionStorage.setItem(EXPLORER_SEARCH_KEY, searchQuery);
+  }, [searchQuery]);
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const filteredBlocks = useMemo(() => {
+    if (!normalizedSearch) {
+      return DUMMY_BLOCKS;
+    }
+
+    return DUMMY_BLOCKS.filter((block) => {
+      return (
+        block.hash.toLowerCase().includes(normalizedSearch) ||
+        block.miner.toLowerCase().includes(normalizedSearch) ||
+        block.index.toString().includes(normalizedSearch)
+      );
+    });
+  }, [DUMMY_BLOCKS, normalizedSearch]);
+
+  const filteredTransactions = useMemo(() => {
+    if (!normalizedSearch) {
+      return DUMMY_TRANSACTIONS;
+    }
+
+    return DUMMY_TRANSACTIONS.filter((tx) => {
+      return (
+        tx.txid.toLowerCase().includes(normalizedSearch) ||
+        tx.from.toLowerCase().includes(normalizedSearch) ||
+        tx.to.toLowerCase().includes(normalizedSearch) ||
+        tx.type.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [DUMMY_TRANSACTIONS, normalizedSearch]);
+
+  const avgTxPerBlock = useMemo(() => {
+    if (DUMMY_BLOCKS.length === 0) return 0;
+    const sample = DUMMY_BLOCKS.slice(0, 8);
+    const sum = sample.reduce((acc, b) => acc + Number(b.transactions || 0), 0);
+    return sum / sample.length;
+  }, [DUMMY_BLOCKS]);
+
+  const blocks24h = useMemo(
+    () => DUMMY_BLOCKS.filter((b) => Date.now() - b.timestamp <= 24 * 60 * 60 * 1000).length,
+    [DUMMY_BLOCKS],
+  );
+
+  const totalWalletBalance = useMemo(
+    () => data.wallets.reduce((sum, w) => sum + Number(w.balanceNVC || 0), 0),
+    [data.wallets],
+  );
+
+  const latestBlockTs = DUMMY_BLOCKS[0]?.timestamp ?? 0;
+  const nextBlockTs = latestBlockTs > 0 ? latestBlockTs + 5 * 60 * 1000 : 0;
+  const secToNext = nextBlockTs > 0 ? Math.max(0, Math.floor((nextBlockTs - Date.now()) / 1000)) : 0;
+  const countdownText = nextBlockTs > 0
+    ? `${Math.floor(secToNext / 60).toString().padStart(2, '0')}:${(secToNext % 60).toString().padStart(2, '0')}`
+    : '--:--';
+  const countdownPct = nextBlockTs > 0 ? Math.min(100, Math.max(0, Math.round(((300 - secToNext) / 300) * 100))) : 0;
+
+  const pendingCount = DUMMY_TRANSACTIONS.filter((t) => t.status === 'PENDING').length;
+  const healthyPeers = p2p.peer_health?.filter((entry) => entry.healthy).length ?? 0;
+  const peerBase = p2p.peer_count || 0;
+  const healthyPeerPct = peerBase > 0 ? Math.round((healthyPeers / peerBase) * 100) : 0;
+
+  const scrollToTransactions = () => {
+    const el = document.getElementById('explorer-transactions-table');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <div className="animate-in">
@@ -24,6 +106,8 @@ const Explorer = () => {
             type="text" 
             className="nfm-search__input" 
             placeholder="Search blocks, txids, addresses..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
       </div>
@@ -36,10 +120,10 @@ const Explorer = () => {
         marginBottom: 'var(--space-4)'
       }}>
         {[
-          { label: 'Global Hashrate', value: '8.42 EH/s', icon: <Cpu size={16}/>, color: 'cyan', trend: '+2.1%' },
-          { label: 'Active Nodes', value: '1,402', icon: <Globe size={16}/>, color: 'purple', trend: 'Online' },
-          { label: 'Network Fee', value: '0.05 NVC', icon: <Zap size={16}/>, color: 'success', trend: 'Optimal' },
-          { label: 'Network Level', value: 'Lvl 4', icon: <ShieldCheck size={16}/>, color: 'cyan', trend: 'Secure' },
+          { label: 'Recent Avg Tx/Block', value: avgTxPerBlock.toFixed(2), icon: <Cpu size={16}/>, color: 'cyan', trend: `24h +${blocks24h} blocks` },
+          { label: 'Active Nodes', value: p2p.peer_count.toLocaleString(), icon: <Globe size={16}/>, color: 'purple', trend: p2p.status.toUpperCase() },
+          { label: 'Pending Transactions', value: pendingCount.toLocaleString(), icon: <Zap size={16}/>, color: 'success', trend: pendingCount > 0 ? 'Queue Open' : 'Queue Empty' },
+          { label: 'Network Level', value: p2p.gossip_enabled ? 'Gossip ON' : 'Gossip OFF', icon: <ShieldCheck size={16}/>, color: 'cyan', trend: `Peers ${p2p.peer_count}` },
         ].map((stat, idx) => (
           <div key={idx} className="nfm-glass-card" style={{ padding: 'var(--space-5)', marginBottom: 0 }}>
             <div className="flex items-center gap-3 mb-3">
@@ -73,17 +157,17 @@ const Explorer = () => {
           </div>
           <div className="grid grid-cols-2 gap-8">
             <div>
-              <div className="text-[10px] text-muted mb-1">Mined Supply</div>
-              <div className="text-xl font-display text-primary">21,425,780 <span className="text-xs text-muted">/ 100M</span></div>
+              <div className="text-[10px] text-muted mb-1">Mined Blocks</div>
+              <div className="text-xl font-display text-primary">{data.status.blocks.toLocaleString()} <span className="text-xs text-muted">blocks</span></div>
               <div className="nfm-progress mt-2" style={{ height: '4px' }}>
-                <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: '21.4%' }}></div>
+                <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: `${Math.min(100, data.status.blocks)}%` }}></div>
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-muted mb-1">Ecosystem Treasury</div>
-              <div className="text-xl font-display text-purple">8,420,000 <span className="text-xs text-muted">NVC</span></div>
+              <div className="text-[10px] text-muted mb-1">Tracked Wallet Liquidity</div>
+              <div className="text-xl font-display text-purple">{totalWalletBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs text-muted">NVC</span></div>
               <div className="flex items-center gap-1 text-[10px] text-muted mt-1">
-                <Wallet size={10} /> 40% Epoch Allocation
+                <Wallet size={10} /> {data.wallets.length} wallets indexed
               </div>
             </div>
           </div>
@@ -95,9 +179,9 @@ const Explorer = () => {
              <Flame size={16} className="text-pink" />
              <span className="text-xs text-muted uppercase tracking-wider">Total Burned</span>
           </div>
-          <div className="text-xl font-display text-primary mb-1">842,500 <span className="text-xs text-pink">NVC</span></div>
+          <div className="text-xl font-display text-primary mb-1">{data.status.total_burned.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs text-pink">NVC</span></div>
           <div className="flex items-center gap-1 text-[10px] text-success">
-            <TrendingDown size={12} /> 50% Gas Fee Burned
+            <TrendingDown size={12} /> Burn tracked on-chain
           </div>
         </div>
 
@@ -107,10 +191,10 @@ const Explorer = () => {
              <Trophy size={16} className="text-cyan" />
              <span className="text-xs text-muted uppercase tracking-wider">Reward Pool</span>
           </div>
-          <div className="text-xl font-display text-primary mb-1">12,450,000 <span className="text-xs text-cyan">NVC</span></div>
+          <div className="text-xl font-display text-primary mb-1">{Number(data.user_profile.balance || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} <span className="text-xs text-cyan">NVC</span></div>
           <div className="flex justify-between items-center text-[10px] text-muted mt-1">
-            <span>500 NVC / 5 Min</span>
-            <span className="text-success">Refilling</span>
+            <span>{data.user_profile.username}</span>
+            <span className="text-success">Wallet Balance</span>
           </div>
         </div>
       </div>
@@ -129,15 +213,15 @@ const Explorer = () => {
           </h3>
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-4xl font-display text-primary">02:45</div>
+              <div className="text-4xl font-display text-primary">{countdownText}</div>
               <div className="text-xs text-muted">Estimated Confirmation Time</div>
             </div>
             <div className="relative" style={{ width: '60px', height: '60px' }}>
                <svg viewBox="0 0 36 36" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
                  <circle cx="18" cy="18" r="16" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
-                 <circle cx="18" cy="18" r="16" fill="none" stroke="var(--neon-cyan)" strokeWidth="3" strokeDasharray="100" strokeDashoffset="35" strokeLinecap="round" />
+                 <circle cx="18" cy="18" r="16" fill="none" stroke="var(--neon-cyan)" strokeWidth="3" strokeDasharray="100" strokeDashoffset={100 - countdownPct} strokeLinecap="round" />
                </svg>
-               <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono text-cyan">65%</div>
+               <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono text-cyan">{countdownPct}%</div>
             </div>
           </div>
         </div>
@@ -149,15 +233,15 @@ const Explorer = () => {
           </h3>
           <div>
             <div className="flex justify-between items-end mb-2">
-               <div className="text-2xl font-display text-primary">82,450</div>
-               <div className="text-xs text-purple">Blocks to Reward Reduction</div>
+              <div className="text-2xl font-display text-primary">{p2p.last_sync_unix > 0 ? formatAgo(p2p.last_sync_unix * 1000) : '-'}</div>
+              <div className="text-xs text-purple">Latest Gossip Sync</div>
             </div>
             <div className="nfm-progress" style={{ height: '6px' }}>
-               <div className="nfm-progress__fill nfm-progress__fill--purple" style={{ width: '78%' }}></div>
+              <div className="nfm-progress__fill nfm-progress__fill--purple" style={{ width: `${healthyPeerPct}%` }}></div>
             </div>
             <div className="flex justify-between text-[10px] text-muted mt-2">
-               <span>Last: Aug 2024 (500 NVC)</span>
-               <span>Next: Jan 2026 (250 NVC)</span>
+              <span>Healthy peers</span>
+              <span>{healthyPeerPct}%</span>
             </div>
           </div>
         </div>
@@ -170,7 +254,7 @@ const Explorer = () => {
             <h2 className="text-lg text-primary flex items-center gap-2">
               <Activity className="text-cyan" /> Latest Blocks
             </h2>
-            <button className="nfm-btn nfm-btn--ghost nfm-btn--sm">Filter Type</button>
+            <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" onClick={() => setSearchQuery('')}>Clear Filter</button>
           </div>
           
           <table className="nfm-table">
@@ -184,18 +268,18 @@ const Explorer = () => {
               </tr>
             </thead>
             <tbody>
-              {DUMMY_BLOCKS.map(b => (
+              {filteredBlocks.map(b => (
                 <tr key={b.index} className="nfm-glass-card--interactive" style={{cursor: 'pointer'}} onClick={() => setSelectedBlock(b)}>
                   <td className="font-mono text-cyan">#{b.index}</td>
                   <td className="font-mono text-muted">{b.hash.substring(0, 16)}...</td>
                   <td>{b.transactions}</td>
                   <td className="font-mono text-sm">{b.miner}</td>
-                  <td className="text-muted">{Math.floor((Date.now() - b.timestamp) / 1000)}s ago</td>
+                  <td className="text-muted">{formatAgo(b.timestamp)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <button className="nfm-btn-more">
+          <button className="nfm-btn-more" onClick={() => setSearchQuery('')}>
             <ArrowRight size={14} /> View All Blocks
           </button>
         </div>
@@ -210,19 +294,19 @@ const Explorer = () => {
               <div className="flex-col gap-2">
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-muted">Network Load</span>
-                  <span className="text-cyan">42%</span>
+                  <span className="text-cyan">{Math.min(100, pendingCount * 8)}%</span>
                 </div>
                 <div className="nfm-progress">
-                  <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: '42%' }}></div>
+                  <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: `${Math.min(100, pendingCount * 8)}%` }}></div>
                 </div>
               </div>
               <div className="flex-col gap-2">
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-muted">Staking Ratio</span>
-                  <span className="text-purple">68.5%</span>
+                  <span className="text-muted">Healthy Peers</span>
+                  <span className="text-purple">{healthyPeerPct}%</span>
                 </div>
                 <div className="nfm-progress">
-                  <div className="nfm-progress__fill nfm-progress__fill--purple" style={{ width: '68.5%' }}></div>
+                  <div className="nfm-progress__fill nfm-progress__fill--purple" style={{ width: `${healthyPeerPct}%` }}></div>
                 </div>
               </div>
             </div>
@@ -237,13 +321,13 @@ const Explorer = () => {
                  <div key={idx} className="flex justify-between items-center py-2 border-b border-white-05" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                    <div className="flex flex-col">
                      <span className="text-xs font-mono text-cyan truncate w-32">{t.txid}</span>
-                     <span className="text-[10px] text-muted">Just now</span>
+                     <span className="text-[10px] text-muted">{formatAgo(t.timestamp)}</span>
                    </div>
                    <span className="text-xs text-primary">{t.amount} NVC</span>
                  </div>
                ))}
              </div>
-             <button className="nfm-btn-more" style={{ marginTop: 'var(--space-4)', padding: 'var(--space-2)' }}>
+             <button className="nfm-btn-more" style={{ marginTop: 'var(--space-4)', padding: 'var(--space-2)' }} onClick={scrollToTransactions}>
                View Mempool
              </button>
           </div>
@@ -251,13 +335,13 @@ const Explorer = () => {
       </div>
 
       {/* Full Transaction History Table */}
-      <div className="nfm-glass-card mt-8" style={{ marginBottom: 0 }}>
+      <div id="explorer-transactions-table" className="nfm-glass-card mt-8" style={{ marginBottom: 0 }}>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg text-primary flex items-center gap-2">
             <Zap className="text-purple" /> Latest Transactions
           </h2>
           <div className="flex gap-2">
-             <div className="nfm-badge nfm-badge--muted">Total TPS: 1,240</div>
+             <div className="nfm-badge nfm-badge--muted">Pending: {pendingCount}</div>
           </div>
         </div>
         
@@ -274,7 +358,7 @@ const Explorer = () => {
             </tr>
           </thead>
           <tbody>
-            {DUMMY_TRANSACTIONS.map((tx, idx) => (
+            {filteredTransactions.map((tx, idx) => (
               <tr key={idx}>
                 <td className="font-mono text-cyan">{tx.txid}</td>
                 <td>
@@ -297,7 +381,7 @@ const Explorer = () => {
           </tbody>
         </table>
         
-        <button className="nfm-btn-more">
+        <button className="nfm-btn-more" onClick={() => setSearchQuery('')}>
           <ArrowRight size={14} /> View All Transactions
         </button>
       </div>
@@ -341,24 +425,20 @@ const Explorer = () => {
 
             <h3 className="text-lg mb-4">Transactions in this Block ({selectedBlock.transactions})</h3>
             <div className="space-y-3">
-               {[1, 2, 3].map(i => (
-                 <div key={i} className="flex justify-between items-center p-4 rounded-lg bg-surface-lowest">
-                   <div className="flex items-center gap-3">
-                     <div className="w-8 h-8 rounded bg-surface-container flex items-center justify-center text-xs text-muted">
-                       {i}
-                     </div>
-                     <div className="flex flex-col">
-                       <span className="text-xs font-mono text-cyan">0x{Math.random().toString(16).slice(2, 12)}...</span>
-                       <span className="text-[10px] text-muted">Standard Transfer</span>
-                     </div>
-                   </div>
-                   <div className="text-right">
-                     <div className="text-sm text-primary">120.50 NVC</div>
-                     <div className="text-[10px] text-muted">0.02 Fee</div>
-                   </div>
-                 </div>
-               ))}
-               <button className="nfm-btn nfm-btn--ghost nfm-btn--sm mt-2" style={{ width: '100%' }}>View All Block Transactions</button>
+               <div className="p-4 rounded-lg bg-surface-lowest text-sm text-muted">
+                 Per-transaction detail per block belum diekspos oleh endpoint saat ini.
+                 Gunakan tabel "Latest Transactions" di halaman ini untuk data transaksi aktual dari backend.
+               </div>
+               <button
+                 className="nfm-btn nfm-btn--ghost nfm-btn--sm mt-2"
+                 style={{ width: '100%' }}
+                 onClick={() => {
+                   setSelectedBlock(null);
+                   scrollToTransactions();
+                 }}
+               >
+                 View Transactions Table
+               </button>
             </div>
           </div>
         </div>
