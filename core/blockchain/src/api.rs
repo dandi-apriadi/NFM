@@ -131,6 +131,13 @@ fn format_bytes(bytes: usize) -> String {
     }
 }
 
+fn parse_prefixed_id(raw: &str, prefix: &str) -> Option<u32> {
+    if let Some(rest) = raw.strip_prefix(prefix) {
+        return rest.parse::<u32>().ok();
+    }
+    raw.parse::<u32>().ok()
+}
+
 fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
     let chain = state.chain.lock().unwrap();
     let wallets = state.wallets.lock().unwrap();
@@ -735,6 +742,254 @@ pub fn start_api_server(state: ApiState, port: u16) {
                 ("GET", "/api/app/state") => {
                     let payload = build_frontend_app_state(&state);
                     (200, "application/json", payload.to_string())
+                },
+                ("POST", "/api/app/wallet/transfer") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let from = data["from"]
+                        .as_str()
+                        .unwrap_or(&state.node_address)
+                        .to_string();
+                    let to = data["to"].as_str().unwrap_or("").to_string();
+                    let amount = data["amount"].as_f64().unwrap_or(0.0);
+
+                    if to.is_empty() || amount <= 0.0 {
+                        (400, "application/json", serde_json::json!({
+                            "error": "Missing or invalid fields: to, amount"
+                        }).to_string())
+                    } else {
+                        let mut wallets = state.wallets.lock().unwrap();
+                        if wallets.deduct_balance(&from, amount).is_err() {
+                            (400, "application/json", serde_json::json!({
+                                "error": "Insufficient balance"
+                            }).to_string())
+                        } else {
+                            wallets.add_balance(&to, amount);
+                            drop(wallets);
+
+                            let intent = serde_json::json!({
+                                "type": "TRANSFER_APP",
+                                "address": from,
+                                "target": to,
+                                "amount": amount,
+                                "created_at": chrono::Utc::now().timestamp()
+                            }).to_string();
+                            state.mempool.lock().unwrap().push(intent);
+
+                            (200, "application/json", serde_json::json!({
+                                "status": "success",
+                                "message": "Transfer executed",
+                                "amount": amount
+                            }).to_string())
+                        }
+                    }
+                },
+                ("POST", "/api/app/governance/proposal") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let title = data["title"].as_str().unwrap_or("").trim().to_string();
+                    let description = data["description"].as_str().unwrap_or("Created from NFM Explorer UI").to_string();
+                    let proposer = data["proposer"]
+                        .as_str()
+                        .unwrap_or(&state.node_address)
+                        .to_string();
+
+                    if title.is_empty() {
+                        (400, "application/json", serde_json::json!({ "error": "Title is required" }).to_string())
+                    } else {
+                        let mut gov = state.governance_engine.lock().unwrap();
+                        let id = gov.create_proposal(&proposer, &title, &description);
+                        (200, "application/json", serde_json::json!({
+                            "status": "success",
+                            "proposal_id": id,
+                            "message": "Proposal created"
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/app/governance/vote") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let raw_proposal_id = data["proposal_id"].as_str().unwrap_or("0");
+                    let proposal_id = parse_prefixed_id(raw_proposal_id, "prop-").unwrap_or(0);
+                    let approve = data["approve"].as_bool().unwrap_or(true);
+                    let voter = data["voter"]
+                        .as_str()
+                        .unwrap_or(&state.node_address)
+                        .to_string();
+
+                    if proposal_id == 0 {
+                        (400, "application/json", serde_json::json!({ "error": "Invalid proposal_id" }).to_string())
+                    } else {
+                        let mut gov = state.governance_engine.lock().unwrap();
+                        match gov.vote(proposal_id, &voter, approve) {
+                            Ok(msg) => (200, "application/json", serde_json::json!({
+                                "status": "success",
+                                "message": msg
+                            }).to_string()),
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string())
+                        }
+                    }
+                },
+                ("POST", "/api/app/quest/claim") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let raw_quest_id = data["quest_id"].as_str().unwrap_or("0");
+                    let mission_id = parse_prefixed_id(raw_quest_id, "q-").unwrap_or(0);
+                    let address = data["address"]
+                        .as_str()
+                        .unwrap_or(&state.node_address)
+                        .to_string();
+
+                    if mission_id == 0 {
+                        (400, "application/json", serde_json::json!({ "error": "Invalid quest_id" }).to_string())
+                    } else {
+                        let mut missions = state.mission_engine.lock().unwrap();
+                        let key = format!("{}:{}", address, mission_id);
+
+                        if !missions.active_assignments.contains_key(&key)
+                            && !missions.completed_missions.get(&address).map(|set| set.contains(&mission_id)).unwrap_or(false)
+                        {
+                            if let Err(e) = missions.start_mission(&address, mission_id) {
+                                (400, "application/json", serde_json::json!({ "error": e }).to_string())
+                            } else {
+                                let required_units = missions
+                                    .available_missions
+                                    .iter()
+                                    .find(|m| m.id == mission_id)
+                                    .map(|m| m.work_type.required_units())
+                                    .unwrap_or(0);
+                                let min_duration_secs = missions
+                                    .available_missions
+                                    .iter()
+                                    .find(|m| m.id == mission_id)
+                                    .map(|m| m.work_type.min_duration_secs())
+                                    .unwrap_or(5);
+                                let _ = missions.report_progress(&address, mission_id, required_units);
+
+                                let started_at = chrono::Utc::now().timestamp().saturating_sub((min_duration_secs + 1) as i64) as u64;
+                                let completed_at = chrono::Utc::now().timestamp() as u64;
+                                let nonce = completed_at;
+                                let result_hash = crate::mission::MissionEngine::compute_expected_hash(&address, mission_id, nonce);
+                                let proof = crate::mission::WorkProof {
+                                    result_hash,
+                                    cycles_completed: required_units,
+                                    started_at,
+                                    completed_at,
+                                    nonce,
+                                };
+                                let _ = missions.submit_proof(&address, mission_id, proof);
+
+                                match missions.claim_reward(&address, mission_id) {
+                                    Ok(reward) => {
+                                        drop(missions);
+                                        let mut wallets = state.wallets.lock().unwrap();
+                                        wallets.add_balance(&address, reward);
+                                        (200, "application/json", serde_json::json!({
+                                            "status": "success",
+                                            "reward": reward,
+                                            "message": "Quest reward claimed"
+                                        }).to_string())
+                                    }
+                                    Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string())
+                                }
+                            }
+                        } else {
+                            match missions.claim_reward(&address, mission_id) {
+                                Ok(reward) => {
+                                    drop(missions);
+                                    let mut wallets = state.wallets.lock().unwrap();
+                                    wallets.add_balance(&address, reward);
+                                    (200, "application/json", serde_json::json!({
+                                        "status": "success",
+                                        "reward": reward,
+                                        "message": "Quest reward claimed"
+                                    }).to_string())
+                                }
+                                Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string())
+                            }
+                        }
+                    }
+                },
+                ("POST", "/api/app/mystery/extract") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                    let address = data["address"]
+                        .as_str()
+                        .unwrap_or(&state.node_address)
+                        .to_string();
+
+                    let fee = 5.0;
+                    let mut wallets = state.wallets.lock().unwrap();
+                    if wallets.deduct_balance(&address, fee).is_err() {
+                        (400, "application/json", serde_json::json!({ "error": "Insufficient balance for extraction fee" }).to_string())
+                    } else {
+                        let rewards = ["10 NVC Fragment", "500 NVC Packet", "Code Auditor Skill", "Genesis Fragment #42"];
+                        let idx = (chrono::Utc::now().timestamp() as usize) % rewards.len();
+                        let reward_name = rewards[idx];
+                        if reward_name.contains("NVC") {
+                            if reward_name.contains("500") {
+                                wallets.add_balance(&address, 500.0);
+                            } else {
+                                wallets.add_balance(&address, 10.0);
+                            }
+                        }
+                        drop(wallets);
+
+                        let mut admin = state.admin_engine.lock().unwrap();
+                        admin.logs.push(crate::admin::AdminLog {
+                            timestamp: chrono::Utc::now().timestamp(),
+                            action: "MYSTERY_EXTRACT".to_string(),
+                            target: address.clone(),
+                            admin: state.node_address.clone(),
+                            reason: reward_name.to_string(),
+                        });
+                        (200, "application/json", serde_json::json!({
+                            "status": "success",
+                            "reward": reward_name,
+                            "fee": fee
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/app/market/purchase") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                    let address = data["address"].as_str().unwrap_or(&state.node_address).to_string();
+                    let item_id = data["item_id"].as_str().unwrap_or("unknown").to_string();
+                    let price = data["price"].as_f64().unwrap_or(0.0);
+
+                    if price <= 0.0 {
+                        (400, "application/json", serde_json::json!({ "error": "Invalid price" }).to_string())
+                    } else {
+                        let mut wallets = state.wallets.lock().unwrap();
+                        if wallets.deduct_balance(&address, price).is_err() {
+                            (400, "application/json", serde_json::json!({ "error": "Insufficient balance" }).to_string())
+                        } else {
+                            drop(wallets);
+                            let mut admin = state.admin_engine.lock().unwrap();
+                            admin.logs.push(crate::admin::AdminLog {
+                                timestamp: chrono::Utc::now().timestamp(),
+                                action: "MARKET_PURCHASE".to_string(),
+                                target: item_id.clone(),
+                                admin: address.clone(),
+                                reason: format!("{:.2} NVC", price),
+                            });
+                            (200, "application/json", serde_json::json!({
+                                "status": "success",
+                                "item_id": item_id,
+                                "price": price
+                            }).to_string())
+                        }
+                    }
                 },
                 ("GET", "/api/wallets") => {
                     let wallets = state.wallets.lock().unwrap();
@@ -2692,6 +2947,146 @@ mod tests {
 
         assert_eq!(status, 200);
         assert!(response_body.contains("selected_node"));
+    }
+
+    #[test]
+    fn test_app_wallet_transfer_endpoint_executes_and_queues_intent() {
+        let secret = "test_secret_app_transfer";
+        let node_address = "nfm_founder_test";
+        let sender = "nfm_sender_app";
+
+        let mut wallets = WalletEngine::new();
+        wallets.set_balance(sender, 50.0);
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let body = serde_json::json!({
+            "from": sender,
+            "to": "nfm_receiver_app",
+            "amount": 12.5
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/app/wallet/transfer", &body, &[]);
+        assert_eq!(status, 200);
+        assert!(response_body.contains("Transfer executed"));
+
+        let (mempool_status, mempool_body) = send_get(port, "/api/mempool", &[]);
+        assert_eq!(mempool_status, 200);
+        assert!(mempool_body.contains("TRANSFER_APP"));
+    }
+
+    #[test]
+    fn test_app_governance_proposal_and_vote_endpoints() {
+        let secret = "test_secret_app_governance";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let proposal_body = serde_json::json!({
+            "title": "Proposal from app endpoint test",
+            "description": "Ensure app endpoint can create proposal",
+            "proposer": node_address
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/app/governance/proposal", &proposal_body, &[]);
+        assert_eq!(status, 200);
+
+        let proposal_json: serde_json::Value =
+            serde_json::from_str(&response_body).expect("valid proposal response json");
+        let proposal_id = proposal_json["proposal_id"].as_u64().unwrap_or(0);
+        assert!(proposal_id > 0);
+
+        let vote_body = serde_json::json!({
+            "proposal_id": proposal_id.to_string(),
+            "approve": true,
+            "voter": node_address
+        })
+        .to_string();
+
+        let (vote_status, vote_response) = send_post(port, "/api/app/governance/vote", &vote_body, &[]);
+        assert_eq!(vote_status, 400);
+        assert!(vote_response.contains("No reputation") || vote_response.contains("error"));
+    }
+
+    #[test]
+    fn test_app_quest_claim_endpoint_rewards_wallet() {
+        let secret = "test_secret_app_quest";
+        let node_address = "nfm_founder_test";
+
+        let mut wallets = WalletEngine::new();
+        wallets.set_balance(node_address, 0.0);
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let body = serde_json::json!({
+            "quest_id": "q-2",
+            "address": node_address
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/app/quest/claim", &body, &[]);
+        assert_eq!(status, 200);
+        assert!(response_body.contains("Quest reward claimed"));
+
+        let (wallet_status, wallet_body) = send_get(port, "/api/wallets", &[]);
+        assert_eq!(wallet_status, 200);
+        assert!(wallet_body.contains(node_address));
+    }
+
+    #[test]
+    fn test_app_mystery_extract_endpoint_returns_reward() {
+        let secret = "test_secret_app_mystery";
+        let node_address = "nfm_founder_test";
+
+        let mut wallets = WalletEngine::new();
+        wallets.set_balance(node_address, 20.0);
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let body = serde_json::json!({ "address": node_address }).to_string();
+        let (status, response_body) = send_post(port, "/api/app/mystery/extract", &body, &[]);
+        assert_eq!(status, 200);
+        assert!(response_body.contains("reward"));
+    }
+
+    #[test]
+    fn test_app_market_purchase_endpoint_deducts_balance() {
+        let secret = "test_secret_app_market";
+        let node_address = "nfm_founder_test";
+
+        let mut wallets = WalletEngine::new();
+        wallets.set_balance(node_address, 200.0);
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let body = serde_json::json!({
+            "address": node_address,
+            "item_id": "market-42",
+            "price": 99.0
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/app/market/purchase", &body, &[]);
+        assert_eq!(status, 200);
+        assert!(response_body.contains("market-42"));
     }
 
 

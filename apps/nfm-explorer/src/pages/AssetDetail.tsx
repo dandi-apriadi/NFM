@@ -1,11 +1,12 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, ShoppingCart, User, Activity } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
+import { appPurchaseMarketItem } from '../api/client';
 
 const AssetDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { data } = useAppData();
+  const { data, refresh } = useAppData();
   const DUMMY_MARKET_ITEMS = data.market_items;
   
   const asset = DUMMY_MARKET_ITEMS.find(item => item.id === id) || {
@@ -16,6 +17,16 @@ const AssetDetail = () => {
     type: 'AI_SKILL',
     sales: 12,
     rating: 5.0
+  };
+
+  const handlePurchase = async () => {
+    try {
+      await appPurchaseMarketItem(asset.id, asset.price, data.user_profile.nfmAddress);
+      await refresh();
+      window.alert('Purchase successful');
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Purchase failed');
+    }
   };
 
   return (
@@ -69,7 +80,7 @@ const AssetDetail = () => {
               <div className="font-display text-4xl text-cyan mb-4">{asset.price.toLocaleString('en-US')} NVC</div>
               
               <div className="flex gap-4">
-                 <button className="nfm-btn nfm-btn--primary nfm-btn--lg" style={{ flex: 1 }}>
+                  <button className="nfm-btn nfm-btn--primary nfm-btn--lg" style={{ flex: 1 }} onClick={handlePurchase}>
                     <ShoppingCart size={20} /> Purchase Now
                  </button>
                  <button className="nfm-btn nfm-btn--secondary nfm-btn--lg">

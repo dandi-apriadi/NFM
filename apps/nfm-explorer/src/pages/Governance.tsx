@@ -1,10 +1,35 @@
 import { AlignLeft, CheckCircle2, XCircle, Clock, ArrowRight, Vote, Plus } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
+import { appCreateProposal, appVoteProposal } from '../api/client';
 
 const Governance = () => {
-  const { data } = useAppData();
+  const { data, refresh } = useAppData();
   const DUMMY_PROPOSALS = data.proposals;
   const DUMMY_USER = data.user_profile;
+
+  const handleCreateProposal = async () => {
+    const title = window.prompt('Proposal title');
+    if (!title) return;
+    const description = window.prompt('Proposal description') || 'Created from NFM Explorer';
+
+    try {
+      await appCreateProposal(title, description, DUMMY_USER.nfmAddress);
+      await refresh();
+      window.alert('Proposal created');
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Create proposal failed');
+    }
+  };
+
+  const handleVote = async (proposalId: string, approve: boolean) => {
+    try {
+      await appVoteProposal(proposalId, approve, DUMMY_USER.nfmAddress);
+      await refresh();
+      window.alert('Vote submitted');
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Vote failed');
+    }
+  };
 
   return (
     <div className="animate-in">
@@ -18,7 +43,7 @@ const Governance = () => {
             <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Your Voting Power</div>
             <div className="font-mono text-cyan font-bold">{Math.floor(DUMMY_USER.balance).toLocaleString()} VP</div>
           </div>
-          <button className="nfm-btn nfm-btn--primary">
+          <button className="nfm-btn nfm-btn--primary" onClick={handleCreateProposal}>
             <Plus size={16} /> Create Proposal
           </button>
         </div>
@@ -81,8 +106,8 @@ const Governance = () => {
                          
                          {prop.status === 'ACTIVE' ? (
                            <div className="flex gap-2">
-                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--success)', color: 'var(--success)'}}>Vote For</button>
-                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--hyper-pink)', color: 'var(--hyper-pink)'}}>Vote Against</button>
+                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--success)', color: 'var(--success)'}} onClick={() => handleVote(prop.id, true)}>Vote For</button>
+                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--hyper-pink)', color: 'var(--hyper-pink)'}} onClick={() => handleVote(prop.id, false)}>Vote Against</button>
                            </div>
                          ) : (
                            <button className="nfm-btn nfm-btn--ghost nfm-btn--sm border-white/10 text-muted">View Details</button>

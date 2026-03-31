@@ -1,11 +1,22 @@
 import { Target, Gift, Zap, Shield, ChevronRight, ArrowRight, Trophy, Flame, Network, Cpu, ShieldCheck, Activity } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
+import { appClaimQuest } from '../api/client';
 
 const QuestCenter = () => {
   const navigate = useNavigate();
-   const { data } = useAppData();
+    const { data, refresh } = useAppData();
    const DUMMY_QUESTS = data.quests;
+
+   const handleClaim = async (questId: string) => {
+      try {
+         await appClaimQuest(questId, data.user_profile.nfmAddress);
+         await refresh();
+         window.alert('Quest claimed');
+      } catch (e) {
+         window.alert(e instanceof Error ? e.message : 'Claim failed');
+      }
+   };
 
   return (
     <div className="animate-in">
@@ -92,6 +103,7 @@ const QuestCenter = () => {
                        <div className="font-display text-lg text-gold">+{quest.rewardNVC.toFixed(1)} <span className="text-xs">NVC</span></div>
                        <button 
                          className={`nfm-btn nfm-btn--sm w-full font-bold uppercase tracking-widest text-[10px] ${quest.status === 'CLAIMABLE' ? 'nfm-btn--primary shadow-cyan' : 'nfm-btn--ghost opacity-50'}`}
+                                     onClick={() => handleClaim(quest.id)}
                          disabled={quest.status !== 'CLAIMABLE'}
                        >
                          {quest.status === 'CLAIMABLE' ? 'Claim Reward' : quest.status === 'COMPLETED' ? 'Completed' : 'Processing'}

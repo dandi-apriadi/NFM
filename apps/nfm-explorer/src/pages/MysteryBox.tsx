@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { Gift, Sparkles, ChevronRight, Info, Activity, Trophy, Globe, Zap, Terminal } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
+import { appExtractMystery } from '../api/client';
 
 const MysteryBox = () => {
   const navigate = useNavigate();
-   const { data } = useAppData();
+   const { data, refresh } = useAppData();
    const DUMMY_BOX_HISTORY = data.box_history;
    const DUMMY_USER = data.user_profile;
    const DUMMY_REWARD_CATALOG = data.reward_catalog;
@@ -14,9 +15,18 @@ const MysteryBox = () => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [activeTab, setActiveTab] = useState<'Rewards' | 'Feed' | 'History'>('Rewards');
 
-  const handleExtract = () => {
+   const handleExtract = async () => {
     setIsExtracting(true);
-    setTimeout(() => setIsExtracting(false), 2500); // Simulate extraction
+      try {
+         const result = await appExtractMystery(DUMMY_USER.nfmAddress);
+         await refresh();
+         const reward = typeof result?.reward === 'string' ? result.reward : 'Unknown reward';
+         window.alert(`Extraction success: ${reward}`);
+      } catch (e) {
+         window.alert(e instanceof Error ? e.message : 'Extraction failed');
+      } finally {
+         setIsExtracting(false);
+      }
   };
 
   const nextBoxThreshold = 10;

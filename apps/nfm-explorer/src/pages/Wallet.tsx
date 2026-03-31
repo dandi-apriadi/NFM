@@ -1,10 +1,31 @@
 import { ArrowUpRight, ArrowDownLeft, History, ArrowRight } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
+import { appTransfer } from '../api/client';
 
 const Wallet = () => {
-  const { data } = useAppData();
+  const { data, refresh } = useAppData();
   const DUMMY_USER = data.user_profile;
   const DUMMY_TRANSACTIONS = data.transactions;
+
+  const handleSend = async () => {
+    const to = window.prompt('Target address (nfm_...)');
+    if (!to) return;
+    const amountRaw = window.prompt('Amount NVC');
+    if (!amountRaw) return;
+    const amount = Number(amountRaw);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      window.alert('Invalid amount');
+      return;
+    }
+
+    try {
+      await appTransfer(to, amount, DUMMY_USER.nfmAddress);
+      await refresh();
+      window.alert('Transfer success');
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Transfer failed');
+    }
+  };
 
   return (
     <div className="animate-in">
@@ -29,7 +50,7 @@ const Wallet = () => {
             <button className="nfm-btn nfm-btn--primary" style={{ flex: 1 }}>
               <ArrowDownLeft size={16} /> Receive
             </button>
-            <button className="nfm-btn nfm-btn--secondary" style={{ flex: 1 }}>
+            <button className="nfm-btn nfm-btn--secondary" style={{ flex: 1 }} onClick={handleSend}>
               <ArrowUpRight size={16} /> Send
             </button>
           </div>
