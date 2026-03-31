@@ -601,11 +601,16 @@ impl GovernanceEngine {
 
     /// Get governance summary (untuk dashboard)
     pub fn summary(&self) -> serde_json::Value {
+        let active_windows = self.learning_windows.active_windows().len();
+        let intent_whitelist_size = self.intent_voting.get_whitelist().len();
+
         serde_json::json!({
             "total_proposals": self.proposals.len(),
             "active_proposals": self.active_proposal_count(),
             "registered_nodes": self.reputations.len(),
             "elite_shields_active": self.elite_shield.shield_count(),
+            "learning_windows_active": active_windows,
+            "intent_whitelist_size": intent_whitelist_size,
         })
     }
 }

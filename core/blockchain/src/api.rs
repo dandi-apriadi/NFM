@@ -731,6 +731,240 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         }
                     }
                 },
+                ("GET", "/api/admin/governance/summary") => {
+                    let gov = state.governance_engine.lock().unwrap();
+                    (200, "application/json", gov.summary().to_string())
+                },
+                ("GET", "/api/admin/governance/learning-windows") => {
+                    let gov = state.governance_engine.lock().unwrap();
+                    let active = gov.learning_windows.active_windows();
+                    let json = serde_json::to_string_pretty(&active).unwrap_or_default();
+                    (200, "application/json", json)
+                },
+                ("POST", "/api/admin/governance/learning-window/open") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/governance/learning-window/open", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let epoch = data["epoch"].as_u64().unwrap_or(0);
+                        let start_block = data["start_block"].as_u64().unwrap_or(0);
+                        let end_block = data["end_block"].as_u64().unwrap_or(0);
+                        let model_version = data["model_version"].as_str().unwrap_or("v1.0.0").to_string();
+
+                        if epoch == 0 || end_block <= start_block {
+                            (400, "application/json", serde_json::json!({ "error": "Invalid epoch or block range" }).to_string())
+                        } else {
+                            let mut gov = state.governance_engine.lock().unwrap();
+                            let window_id = gov.learning_windows.open_window(epoch, start_block, end_block, &model_version);
+                            state.block_tx.send(format!("GOV_LEARNING_WINDOW_OPEN: id={} epoch={}", window_id, epoch)).ok();
+                            (200, "application/json", serde_json::json!({
+                                "status": "success",
+                                "window_id": window_id,
+                                "epoch": epoch,
+                                "start_block": start_block,
+                                "end_block": end_block,
+                                "model_version": model_version
+                            }).to_string())
+                        }
+                    }
+                },
+                ("POST", "/api/admin/governance/learning-window/join") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/governance/learning-window/join", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let window_id = data["window_id"].as_u64().unwrap_or(0) as u32;
+                        let participant = data["participant"].as_str().unwrap_or(&state.node_address).to_string();
+
+                        let mut gov = state.governance_engine.lock().unwrap();
+                        match gov.learning_windows.join_window(window_id, &participant) {
+                            Ok(msg) => {
+                                state.block_tx.send(format!("GOV_LEARNING_WINDOW_JOIN: {}", msg)).ok();
+                                (200, "application/json", serde_json::json!({ "status": "success", "message": msg }).to_string())
+                            }
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                        }
+                    }
+                },
+                ("POST", "/api/admin/governance/intent/propose") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/governance/intent/propose", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let intent = data["intent"].as_str().unwrap_or("").to_string();
+                        let requires_quorum = data["requires_quorum"].as_bool().unwrap_or(true);
+
+                        if intent.is_empty() {
+                            (400, "application/json", serde_json::json!({ "error": "Missing intent" }).to_string())
+                        } else {
+                            let mut gov = state.governance_engine.lock().unwrap();
+                            match gov.intent_voting.propose_intent_vote(&intent, requires_quorum) {
+                                Ok(vote_id) => {
+                                    state.block_tx.send(format!("GOV_INTENT_PROPOSE: id={} intent={}", vote_id, intent)).ok();
+                                    (200, "application/json", serde_json::json!({
+                                        "status": "success",
+                                        "vote_id": vote_id,
+                                        "intent": intent,
+                                        "requires_quorum": requires_quorum
+                                    }).to_string())
+                                }
+                                Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                            }
+                        }
+                    }
+                },
+                ("POST", "/api/admin/governance/intent/cast") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/governance/intent/cast", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let vote_id = data["vote_id"].as_u64().unwrap_or(0) as u32;
+                        let voter = data["voter"].as_str().unwrap_or(&state.node_address).to_string();
+                        let approve = data["approve"].as_bool().unwrap_or(true);
+
+                        let mut gov = state.governance_engine.lock().unwrap();
+                        let voter_reputation = gov.get_reputation(&voter);
+                        match gov.intent_voting.cast_intent_vote(vote_id, &voter, approve, voter_reputation) {
+                            Ok(msg) => {
+                                state.block_tx.send(format!("GOV_INTENT_CAST: {}", msg)).ok();
+                                (200, "application/json", serde_json::json!({ "status": "success", "message": msg }).to_string())
+                            }
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                        }
+                    }
+                },
+                ("POST", "/api/admin/governance/intent/execute") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/governance/intent/execute", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let vote_id = data["vote_id"].as_u64().unwrap_or(0) as u32;
+
+                        let mut gov = state.governance_engine.lock().unwrap();
+                        match gov.intent_voting.execute_intent_vote(vote_id) {
+                            Ok(approved) => {
+                                state.block_tx.send(format!("GOV_INTENT_EXECUTE: id={} approved={}", vote_id, approved)).ok();
+                                (200, "application/json", serde_json::json!({
+                                    "status": "success",
+                                    "vote_id": vote_id,
+                                    "approved": approved
+                                }).to_string())
+                            }
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                        }
+                    }
+                },
+                ("POST", "/api/admin/governance/slash/propose") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/governance/slash/propose", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let target = data["target"].as_str().unwrap_or("").to_string();
+                        let reason = data["reason"].as_str().unwrap_or("policy_violation").to_string();
+                        let slash_amount = data["slash_amount"].as_u64().unwrap_or(0);
+
+                        if target.is_empty() || slash_amount == 0 {
+                            (400, "application/json", serde_json::json!({ "error": "Missing target or slash_amount" }).to_string())
+                        } else {
+                            let mut gov = state.governance_engine.lock().unwrap();
+                            if gov.slashing.get_reputation(&target) == 0 {
+                                let seed_reputation = gov.get_reputation(&target).max(100);
+                                gov.slashing.register_participant(&target, seed_reputation);
+                            }
+
+                            match gov.slashing.propose_slash(&target, &reason, slash_amount) {
+                                Ok(event_id) => {
+                                    state.block_tx.send(format!("GOV_SLASH_PROPOSE: event={} target={} amount={}", event_id, target, slash_amount)).ok();
+                                    (200, "application/json", serde_json::json!({
+                                        "status": "success",
+                                        "event_id": event_id,
+                                        "target": target,
+                                        "reason": reason,
+                                        "slash_amount": slash_amount
+                                    }).to_string())
+                                }
+                                Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                            }
+                        }
+                    }
+                },
+                ("POST", "/api/admin/governance/slash/execute") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/governance/slash/execute", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let event_id = data["event_id"].as_u64().unwrap_or(0) as u32;
+
+                        let mut gov = state.governance_engine.lock().unwrap();
+                        match gov.slashing.execute_slash(event_id) {
+                            Ok(current_reputation) => {
+                                state.block_tx.send(format!("GOV_SLASH_EXECUTE: event={} rep={}", event_id, current_reputation)).ok();
+                                (200, "application/json", serde_json::json!({
+                                    "status": "success",
+                                    "event_id": event_id,
+                                    "current_reputation": current_reputation
+                                }).to_string())
+                            }
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                        }
+                    }
+                },
                 // ======================================================================
                 // MISSION START [PHASE 12.1] — Mulai mengerjakan misi
                 // ======================================================================
@@ -1195,6 +1429,7 @@ mod tests {
     fn test_protected_endpoint_detection() {
         assert!(is_protected_endpoint("/api/admin/freeze"));
         assert!(is_protected_endpoint("/api/admin/nuke"));
+        assert!(is_protected_endpoint("/api/admin/governance/learning-window/open"));
         assert!(is_protected_endpoint("/api/nlc"));
         assert!(is_protected_endpoint("/api/transfer/secure"));
         assert!(is_protected_endpoint("/api/staking/deposit"));
@@ -1226,6 +1461,35 @@ mod tests {
         let (status, response_body) = send_post(
             port,
             "/api/transfer/secure",
+            &body,
+            &["x-nfm-signature: invalid_sig".to_string()],
+        );
+
+        assert_eq!(status, 403);
+        assert!(response_body.contains("invalid signature"));
+    }
+
+    #[test]
+    fn test_governance_learning_window_open_requires_signature() {
+        let secret = "test_secret_gov_window";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "epoch": 1,
+            "start_block": 100,
+            "end_block": 200,
+            "model_version": "v1.0.0"
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(
+            port,
+            "/api/admin/governance/learning-window/open",
             &body,
             &["x-nfm-signature: invalid_sig".to_string()],
         );
