@@ -31,6 +31,7 @@ use crate::wallet::CryptoWallet;
 use crate::contract::ContractEngine;
 use crate::mission::MissionEngine;
 use block::Block;
+use nfm_ai_engine::distributed_brain::{GeoDistributedBrainDb, NodeMeta};
 use std::sync::{Arc, Mutex};
 
 struct Blockchain {
@@ -242,6 +243,11 @@ fn main() {
 
     let shared_mempool: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let shared_next_block = Arc::new(Mutex::new(chrono::Utc::now().timestamp() as u64 + 300));
+    let shared_brain_db = Arc::new(Mutex::new(GeoDistributedBrainDb::new()));
+    {
+        let mut brain = shared_brain_db.lock().unwrap();
+        brain.register_node(NodeMeta::new(&founder.address, "id", -6.2088, 106.8456));
+    }
 
     let api_state = api::ApiState {
         chain: api_chain.clone(),
@@ -261,6 +267,7 @@ fn main() {
         aliases: api_aliases,
         mempool: shared_mempool.clone(),
         next_block_timestamp: shared_next_block.clone(),
+        brain_db: shared_brain_db.clone(),
     };
     api::start_api_server(api_state, node_config.api_port);
     println!("  Dashboard running at http://127.0.0.1:{}", node_config.api_port);

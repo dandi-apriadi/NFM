@@ -1,4 +1,5 @@
 use crate::block::Block;
+use nfm_ai_engine::distributed_brain::{DataClass, GeoDistributedBrainDb, NodeMeta, RequestProfile};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::collections::HashMap;
@@ -104,6 +105,8 @@ pub struct ApiState {
     pub mempool: Arc<Mutex<Vec<String>>>,
     /// Jadwal pasti kapan epoch berikutnya akan dieksekusi oleh backend (UTC Unix Seconds)
     pub next_block_timestamp: Arc<Mutex<u64>>,
+    /// Distributed brain data router (geo + latency + load aware)
+    pub brain_db: Arc<Mutex<GeoDistributedBrainDb>>,
 }
 
 /// Mulai REST API server di background thread
@@ -271,6 +274,105 @@ pub fn start_api_server(state: ApiState, port: u16) {
                     let wallets = state.wallets.lock().unwrap();
                     let json = serde_json::to_string_pretty(&wallets.balances).unwrap_or_default();
                     (200, "application/json", json)
+                },
+                ("GET", "/api/brain/status") => {
+                    let brain = state.brain_db.lock().unwrap();
+                    let probe = RequestProfile {
+                        requester_node_id: Some(state.node_address.clone()),
+                        user_latitude: -6.2088,
+                        user_longitude: 106.8456,
+                        data_class: DataClass::Global,
+                        critical: false,
+                    };
+                    let candidates = brain.hedged_candidates(&probe, 3);
+                    (200, "application/json", serde_json::json!({
+                        "status": "ok",
+                        "strategy": "geo+latency+load+error",
+                        "top_candidates": candidates
+                    }).to_string())
+                },
+                ("POST", "/api/brain/route") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let requester_node_id = data["requester_node_id"].as_str().map(|s| s.to_string());
+                    let user_latitude = data["user_latitude"].as_f64().unwrap_or(-6.2088);
+                    let user_longitude = data["user_longitude"].as_f64().unwrap_or(106.8456);
+                    let critical = data["critical"].as_bool().unwrap_or(false);
+                    let class = match data["data_class"].as_str().unwrap_or("global") {
+                        "node_local" => DataClass::NodeLocal,
+                        "regional" => DataClass::Regional,
+                        _ => DataClass::Global,
+                    };
+
+                    let profile = RequestProfile {
+                        requester_node_id,
+                        user_latitude,
+                        user_longitude,
+                        data_class: class,
+                        critical,
+                    };
+
+                    let brain = state.brain_db.lock().unwrap();
+                    let selected = brain.route_request(&profile);
+                    let hedged = if profile.critical {
+                        brain.hedged_candidates(&profile, 2)
+                    } else {
+                        Vec::new()
+                    };
+
+                    match selected {
+                        Some(node_id) => (200, "application/json", serde_json::json!({
+                            "status": "ok",
+                            "selected_node": node_id,
+                            "hedged_candidates": hedged
+                        }).to_string()),
+                        None => (503, "application/json", serde_json::json!({
+                            "error": "No healthy candidate node available"
+                        }).to_string()),
+                    }
+                },
+                ("POST", "/api/brain/fetch") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let key = data["key"].as_str().unwrap_or("").to_string();
+                    if key.is_empty() {
+                        (400, "application/json", serde_json::json!({ "error": "Missing key" }).to_string())
+                    } else {
+                        let requester_node_id = data["requester_node_id"].as_str().map(|s| s.to_string());
+                        let user_latitude = data["user_latitude"].as_f64().unwrap_or(-6.2088);
+                        let user_longitude = data["user_longitude"].as_f64().unwrap_or(106.8456);
+                        let critical = data["critical"].as_bool().unwrap_or(false);
+                        let class = match data["data_class"].as_str().unwrap_or("global") {
+                            "node_local" => DataClass::NodeLocal,
+                            "regional" => DataClass::Regional,
+                            _ => DataClass::Global,
+                        };
+
+                        let profile = RequestProfile {
+                            requester_node_id,
+                            user_latitude,
+                            user_longitude,
+                            data_class: class,
+                            critical,
+                        };
+
+                        let brain = state.brain_db.lock().unwrap();
+                        match brain.fetch_nearest_fastest(&key, &profile) {
+                            Some((node_id, value)) => (200, "application/json", serde_json::json!({
+                                "status": "ok",
+                                "key": key,
+                                "resolved_node": node_id,
+                                "value": value
+                            }).to_string()),
+                            None => (404, "application/json", serde_json::json!({
+                                "error": "Record not found or no healthy replica"
+                            }).to_string()),
+                        }
+                    }
                 },
                 ("GET", "/api/mempool") => {
                     let mempool = state.mempool.lock().unwrap();
@@ -965,6 +1067,97 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         }
                     }
                 },
+                ("POST", "/api/admin/brain/node/register") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/brain/node/register", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let node_id = data["node_id"].as_str().unwrap_or("").to_string();
+                        let region = data["region"].as_str().unwrap_or("global").to_string();
+                        let latitude = data["latitude"].as_f64().unwrap_or(0.0);
+                        let longitude = data["longitude"].as_f64().unwrap_or(0.0);
+
+                        if node_id.is_empty() {
+                            (400, "application/json", serde_json::json!({ "error": "Missing node_id" }).to_string())
+                        } else {
+                            let mut brain = state.brain_db.lock().unwrap();
+                            brain.register_node(NodeMeta::new(&node_id, &region, latitude, longitude));
+                            (200, "application/json", serde_json::json!({
+                                "status": "success",
+                                "node_id": node_id,
+                                "region": region
+                            }).to_string())
+                        }
+                    }
+                },
+                ("POST", "/api/admin/brain/node/metrics") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/brain/node/metrics", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let node_id = data["node_id"].as_str().unwrap_or("").to_string();
+                        let latency = data["latency_ms"].as_f64().unwrap_or(50.0);
+                        let queue_depth = data["queue_depth"].as_f64().unwrap_or(0.0);
+                        let error_rate = data["error_rate"].as_f64().unwrap_or(0.0);
+                        let healthy = data["healthy"].as_bool().unwrap_or(true);
+
+                        let mut brain = state.brain_db.lock().unwrap();
+                        match brain.update_runtime_metrics(&node_id, latency, queue_depth, error_rate, healthy) {
+                            Ok(_) => (200, "application/json", serde_json::json!({
+                                "status": "success",
+                                "node_id": node_id,
+                                "healthy": healthy
+                            }).to_string()),
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                        }
+                    }
+                },
+                ("POST", "/api/admin/brain/record/upsert") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/brain/record/upsert", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+                        let key = data["key"].as_str().unwrap_or("").to_string();
+                        let owner_node = data["owner_node"].as_str().unwrap_or("").to_string();
+                        let value = data["value"].clone();
+                        let class = match data["data_class"].as_str().unwrap_or("global") {
+                            "node_local" => DataClass::NodeLocal,
+                            "regional" => DataClass::Regional,
+                            _ => DataClass::Global,
+                        };
+
+                        if key.is_empty() || owner_node.is_empty() {
+                            (400, "application/json", serde_json::json!({ "error": "Missing key or owner_node" }).to_string())
+                        } else {
+                            let mut brain = state.brain_db.lock().unwrap();
+                            match brain.upsert_record(&key, value, class, &owner_node) {
+                                Ok(_) => (200, "application/json", serde_json::json!({ "status": "success", "key": key }).to_string()),
+                                Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                            }
+                        }
+                    }
+                },
                 // ======================================================================
                 // MISSION START [PHASE 12.1] — Mulai mengerjakan misi
                 // ======================================================================
@@ -1352,6 +1545,7 @@ mod tests {
             aliases: Arc::new(Mutex::new(std::collections::HashMap::new())),
             mempool: Arc::new(Mutex::new(Vec::new())),
             next_block_timestamp: Arc::new(Mutex::new(0)),
+            brain_db: Arc::new(Mutex::new(GeoDistributedBrainDb::new())),
         };
 
         start_api_server(state, port);
@@ -1496,6 +1690,60 @@ mod tests {
 
         assert_eq!(status, 403);
         assert!(response_body.contains("invalid signature"));
+    }
+
+    #[test]
+    fn test_brain_node_register_requires_signature() {
+        let secret = "test_secret_brain_register";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "node_id": "id-jkt-a",
+            "region": "id",
+            "latitude": -6.2088,
+            "longitude": 106.8456
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(
+            port,
+            "/api/admin/brain/node/register",
+            &body,
+            &["x-nfm-signature: invalid_sig".to_string()],
+        );
+
+        assert_eq!(status, 403);
+        assert!(response_body.contains("invalid signature"));
+    }
+
+    #[test]
+    fn test_brain_route_returns_503_when_no_healthy_nodes() {
+        let secret = "test_secret_brain_route";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "requester_node_id": "id-jkt-a",
+            "user_latitude": -6.2,
+            "user_longitude": 106.8,
+            "data_class": "global",
+            "critical": false
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/brain/route", &body, &[]);
+
+        assert_eq!(status, 503);
+        assert!(response_body.contains("No healthy candidate node"));
     }
 
     #[test]
