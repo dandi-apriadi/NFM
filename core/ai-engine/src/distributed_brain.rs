@@ -227,13 +227,7 @@ impl GeoDistributedBrainDb {
     }
 
     pub fn route_benchmark(&self, profile: &RequestProfile, count: usize) -> Option<RouteBenchmark> {
-        let mut scored: Vec<(&NodeMeta, f64)> = self
-            .nodes
-            .values()
-            .filter(|n| n.healthy)
-            .filter(|n| self.filter_by_class(profile, n))
-            .map(|n| (n, self.node_score(profile, n)))
-            .collect();
+        let mut scored = self.scored_candidates(profile, &self.weights);
 
         if scored.is_empty() {
             return None;
@@ -266,7 +260,51 @@ impl GeoDistributedBrainDb {
         })
     }
 
-    fn node_score(&self, profile: &RequestProfile, node: &NodeMeta) -> f64 {
+    pub fn route_benchmark_with_weights(
+        &self,
+        profile: &RequestProfile,
+        weights: &RouterWeights,
+        count: usize,
+    ) -> Option<RouteBenchmark> {
+        let mut scored = self.scored_candidates(profile, weights);
+
+        if scored.is_empty() {
+            return None;
+        }
+
+        scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let selected_node = scored[0].0.node_id.clone();
+        let selected_score = scored[0].1;
+        let fallback_node = scored.get(1).map(|(n, _)| n.node_id.clone());
+        let fallback_score = scored.get(1).map(|(_, s)| *s);
+        let projected_score_gain = fallback_score.map(|s| s - selected_score).unwrap_or(0.0);
+
+        let top_candidates = scored
+            .iter()
+            .take(count.max(1))
+            .map(|(n, s)| CandidateScore {
+                node_id: n.node_id.clone(),
+                score: *s,
+            })
+            .collect();
+
+        Some(RouteBenchmark {
+            selected_node,
+            selected_score,
+            fallback_node,
+            fallback_score,
+            projected_score_gain,
+            top_candidates,
+        })
+    }
+
+    fn node_score_with_weights(
+        &self,
+        profile: &RequestProfile,
+        node: &NodeMeta,
+        weights: &RouterWeights,
+    ) -> f64 {
         let geo_distance_km = haversine_km(
             profile.user_latitude,
             profile.user_longitude,
@@ -274,10 +312,23 @@ impl GeoDistributedBrainDb {
             node.longitude,
         );
 
-        self.weights.latency * node.ewma_latency_ms
-            + self.weights.queue * node.queue_depth
-            + self.weights.error * (node.error_rate * 1000.0)
-            + self.weights.geo * geo_distance_km
+        weights.latency * node.ewma_latency_ms
+            + weights.queue * node.queue_depth
+            + weights.error * (node.error_rate * 1000.0)
+            + weights.geo * geo_distance_km
+    }
+
+    fn node_score(&self, profile: &RequestProfile, node: &NodeMeta) -> f64 {
+        self.node_score_with_weights(profile, node, &self.weights)
+    }
+
+    fn scored_candidates(&self, profile: &RequestProfile, weights: &RouterWeights) -> Vec<(&NodeMeta, f64)> {
+        self.nodes
+            .values()
+            .filter(|n| n.healthy)
+            .filter(|n| self.filter_by_class(profile, n))
+            .map(|n| (n, self.node_score_with_weights(profile, n, weights)))
+            .collect()
     }
 
     fn filter_by_class(&self, profile: &RequestProfile, node: &NodeMeta) -> bool {
@@ -485,5 +536,35 @@ mod tests {
         assert!(bench.fallback_node.is_some());
         assert!(bench.projected_score_gain >= 0.0);
         assert_eq!(bench.top_candidates.len(), 3);
+    }
+
+    #[test]
+    fn benchmark_with_custom_weights_changes_scoring_strategy() {
+        let db = setup_db();
+        let profile = RequestProfile {
+            requester_node_id: Some("id-jkt-a".to_string()),
+            user_latitude: -6.2,
+            user_longitude: 106.8,
+            data_class: DataClass::Global,
+            critical: true,
+        };
+
+        let default_bench = db
+            .route_benchmark(&profile, 3)
+            .expect("default benchmark should be available");
+
+        let latency_heavy = RouterWeights {
+            latency: 0.9,
+            queue: 0.05,
+            error: 0.04,
+            geo: 0.01,
+        };
+
+        let tuned_bench = db
+            .route_benchmark_with_weights(&profile, &latency_heavy, 3)
+            .expect("tuned benchmark should be available");
+
+        assert_eq!(default_bench.selected_node, tuned_bench.selected_node);
+        assert!(tuned_bench.selected_score <= default_bench.selected_score * 2.0);
     }
 }

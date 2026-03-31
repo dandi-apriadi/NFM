@@ -1,5 +1,7 @@
 use crate::block::Block;
-use nfm_ai_engine::distributed_brain::{DataClass, GeoDistributedBrainDb, NodeMeta, RequestProfile};
+use nfm_ai_engine::distributed_brain::{
+    DataClass, GeoDistributedBrainDb, NodeMeta, RequestProfile, RouterWeights,
+};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::collections::HashMap;
@@ -363,6 +365,95 @@ pub fn start_api_server(state: ApiState, port: u16) {
                             "benchmark": bench
                         }).to_string()),
                         None => (503, "application/json", serde_json::json!({
+                            "error": "No healthy candidate node available"
+                        }).to_string()),
+                    }
+                },
+                ("POST", "/api/brain/benchmark/compare") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let before_profile_json = data["before_profile"].clone();
+                    let after_profile_json = data["after_profile"].clone();
+
+                    let before_profile = RequestProfile {
+                        requester_node_id: before_profile_json["requester_node_id"].as_str().map(|s| s.to_string()),
+                        user_latitude: before_profile_json["user_latitude"].as_f64().unwrap_or(-6.2088),
+                        user_longitude: before_profile_json["user_longitude"].as_f64().unwrap_or(106.8456),
+                        data_class: match before_profile_json["data_class"].as_str().unwrap_or("global") {
+                            "node_local" => DataClass::NodeLocal,
+                            "regional" => DataClass::Regional,
+                            _ => DataClass::Global,
+                        },
+                        critical: before_profile_json["critical"].as_bool().unwrap_or(true),
+                    };
+
+                    let after_profile = RequestProfile {
+                        requester_node_id: if after_profile_json.is_null() {
+                            before_profile.requester_node_id.clone()
+                        } else {
+                            after_profile_json["requester_node_id"].as_str().map(|s| s.to_string())
+                        },
+                        user_latitude: if after_profile_json.is_null() {
+                            before_profile.user_latitude
+                        } else {
+                            after_profile_json["user_latitude"].as_f64().unwrap_or(before_profile.user_latitude)
+                        },
+                        user_longitude: if after_profile_json.is_null() {
+                            before_profile.user_longitude
+                        } else {
+                            after_profile_json["user_longitude"].as_f64().unwrap_or(before_profile.user_longitude)
+                        },
+                        data_class: if after_profile_json.is_null() {
+                            before_profile.data_class.clone()
+                        } else {
+                            match after_profile_json["data_class"].as_str().unwrap_or("global") {
+                                "node_local" => DataClass::NodeLocal,
+                                "regional" => DataClass::Regional,
+                                _ => DataClass::Global,
+                            }
+                        },
+                        critical: if after_profile_json.is_null() {
+                            before_profile.critical
+                        } else {
+                            after_profile_json["critical"].as_bool().unwrap_or(before_profile.critical)
+                        },
+                    };
+
+                    let before_weights_json = data["before_weights"].clone();
+                    let after_weights_json = data["after_weights"].clone();
+
+                    let before_weights = RouterWeights {
+                        latency: before_weights_json["latency"].as_f64().unwrap_or(0.55),
+                        queue: before_weights_json["queue"].as_f64().unwrap_or(0.20),
+                        error: before_weights_json["error"].as_f64().unwrap_or(0.20),
+                        geo: before_weights_json["geo"].as_f64().unwrap_or(0.05),
+                    };
+
+                    let after_weights = RouterWeights {
+                        latency: after_weights_json["latency"].as_f64().unwrap_or(0.55),
+                        queue: after_weights_json["queue"].as_f64().unwrap_or(0.20),
+                        error: after_weights_json["error"].as_f64().unwrap_or(0.20),
+                        geo: after_weights_json["geo"].as_f64().unwrap_or(0.05),
+                    };
+
+                    let brain = state.brain_db.lock().unwrap();
+                    let before_bench = brain.route_benchmark_with_weights(&before_profile, &before_weights, 3);
+                    let after_bench = brain.route_benchmark_with_weights(&after_profile, &after_weights, 3);
+
+                    match (before_bench, after_bench) {
+                        (Some(before), Some(after)) => {
+                            let improvement = before.selected_score - after.selected_score;
+                            (200, "application/json", serde_json::json!({
+                                "status": "ok",
+                                "before": before,
+                                "after": after,
+                                "selected_score_improvement": improvement,
+                                "is_better": improvement > 0.0
+                            }).to_string())
+                        }
+                        _ => (503, "application/json", serde_json::json!({
                             "error": "No healthy candidate node available"
                         }).to_string()),
                     }
@@ -1800,6 +1891,52 @@ mod tests {
         .to_string();
 
         let (status, response_body) = send_post(port, "/api/brain/benchmark", &body, &[]);
+
+        assert_eq!(status, 503);
+        assert!(response_body.contains("No healthy candidate node"));
+    }
+
+    #[test]
+    fn test_brain_benchmark_compare_returns_503_when_no_healthy_nodes() {
+        let secret = "test_secret_brain_benchmark_compare";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "before_profile": {
+                "requester_node_id": "id-jkt-a",
+                "user_latitude": -6.2,
+                "user_longitude": 106.8,
+                "data_class": "global",
+                "critical": true
+            },
+            "after_profile": {
+                "requester_node_id": "id-jkt-a",
+                "user_latitude": -6.2,
+                "user_longitude": 106.8,
+                "data_class": "global",
+                "critical": true
+            },
+            "before_weights": {
+                "latency": 0.55,
+                "queue": 0.20,
+                "error": 0.20,
+                "geo": 0.05
+            },
+            "after_weights": {
+                "latency": 0.90,
+                "queue": 0.05,
+                "error": 0.04,
+                "geo": 0.01
+            }
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/brain/benchmark/compare", &body, &[]);
 
         assert_eq!(status, 503);
         assert!(response_body.contains("No healthy candidate node"));
