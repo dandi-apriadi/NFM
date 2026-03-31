@@ -23,6 +23,10 @@ pub struct NodeConfig {
     pub bind_address: String,
     /// Simulation mode (default: false)
     pub nfm_simulation: bool,
+    /// Enable/disable P2P gossip listener and bootstrap
+    pub p2p_gossip_enabled: bool,
+    /// Seed peers for bootstrap discovery, format: host:port,host:port
+    pub p2p_seed_peers: Vec<String>,
 }
 
 impl NodeConfig {
@@ -38,6 +42,8 @@ impl NodeConfig {
             db_path: Self::env_string("NFM_DB_PATH", "nfm_main.db"),
             bind_address: Self::env_string("NFM_BIND_ADDR", "0.0.0.0"),
             nfm_simulation: Self::env_bool("NFM_SIMULATION", false),
+            p2p_gossip_enabled: Self::env_bool("NFM_P2P_GOSSIP", true),
+            p2p_seed_peers: Self::env_csv("NFM_P2P_SEEDS"),
         }
     }
 
@@ -50,6 +56,8 @@ impl NodeConfig {
         println!("[CONFIG] Max Peers: {}", self.max_peers);
         println!("[CONFIG] DB Path: {}", self.db_path);
         println!("[CONFIG] Simulation: {}", self.nfm_simulation);
+        println!("[CONFIG] P2P Gossip: {}", self.p2p_gossip_enabled);
+        println!("[CONFIG] P2P Seeds: {}", self.p2p_seed_peers.len());
         println!("[CONFIG] API Secret: {}...", &self.api_secret[..4.min(self.api_secret.len())]);
     }
 
@@ -62,6 +70,8 @@ impl NodeConfig {
         map.insert("rate_limit".into(), self.rate_limit_per_minute.to_string());
         map.insert("max_peers".into(), self.max_peers.to_string());
         map.insert("db_path".into(), self.db_path.clone());
+        map.insert("p2p_gossip".into(), self.p2p_gossip_enabled.to_string());
+        map.insert("p2p_seed_count".into(), self.p2p_seed_peers.len().to_string());
         map
     }
 
@@ -90,6 +100,18 @@ impl NodeConfig {
             .ok()
             .and_then(|v| v.to_lowercase().parse().ok())
             .unwrap_or(default)
+    }
+
+    fn env_csv(key: &str) -> Vec<String> {
+        std::env::var(key)
+            .ok()
+            .map(|v| {
+                v.split(',')
+                    .map(|part| part.trim().to_string())
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default()
     }
 }
 

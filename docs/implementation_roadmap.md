@@ -22,7 +22,10 @@
 
 ### Fase 5: Ecosystem Expansion & Network Upgrades (Usulan) 🔄
 - [x] **NFM Block Explorer (MVP)**: Frontend Web App berbasis Vite + React sudah aktif untuk visualisasi status node, blocks, mempool, dan wallet lookup dari API lokal.
-- [ ] **P2P Gossip Protocol**: Penyebaran blok otomatis (gossipsub) dan penemuan peer dinamis di jaringan NFM.
+- [x] **P2P Gossip Protocol**: Penyebaran blok otomatis, bootstrap seed peers, peer exchange, dan longest-chain sync aktif di runtime node.
+	- Konfigurasi env:
+		- `NFM_P2P_GOSSIP=true|false`
+		- `NFM_P2P_SEEDS=host1:9000,host2:9000`
 
 ### Catatan Transparansi Progres
 - Node Runner + Blockchain Core + Explorer MVP sudah berjalan.

@@ -27,6 +27,7 @@ use crate::storage::{BlockStorage, WalletStorage};
 use crate::transfer::WalletEngine;
 use crate::admin::AdminEngine;
 use crate::wallet::CryptoWallet;
+use crate::network::P2PNode;
 // use crate::storage::BlockStorage; // Removed duplicate
 use crate::contract::ContractEngine;
 use crate::mission::MissionEngine;
@@ -213,6 +214,38 @@ fn main() {
         } else {
             println!("  [DB] Loaded persistent wallet state.");
         }
+    }
+
+    // =============================================
+    // PHASE 5: P2P GOSSIP BOOTSTRAP
+    // =============================================
+    println!("\n--- PHASE 5: P2P GOSSIP ---");
+    let p2p_node = P2PNode::new(&founder.address, node_config.p2p_port);
+    {
+        let mut chain_lock = p2p_node.chain.lock().unwrap();
+        *chain_lock = blockchain.chain.clone();
+    }
+
+    if node_config.p2p_gossip_enabled {
+        p2p_node.start_listener();
+
+        if !node_config.p2p_seed_peers.is_empty() {
+            println!(
+                "[P2P] Bootstrapping gossip with {} seed peers",
+                node_config.p2p_seed_peers.len()
+            );
+            p2p_node.bootstrap_gossip(&node_config.p2p_seed_peers);
+
+            if let Ok(best_len) = p2p_node.sync_longest_chain() {
+                if best_len > blockchain.chain.len() {
+                    let synced_chain = p2p_node.chain.lock().unwrap().clone();
+                    blockchain.chain = synced_chain;
+                    println!("[P2P] Local chain synced from network ({} blocks)", best_len);
+                }
+            }
+        }
+    } else {
+        println!("[P2P] Gossip disabled via NFM_P2P_GOSSIP=false");
     }
 
     // =============================================
@@ -595,6 +628,12 @@ fn main() {
             // Sync dashboard chain
             if let Ok(mut chain_lock) = api_chain.lock() {
                 *chain_lock = blockchain.chain.clone();
+            }
+
+            if node_config.p2p_gossip_enabled {
+                if let Some(last_block) = blockchain.chain.last() {
+                    p2p_node.broadcast_block(last_block);
+                }
             }
 
             // Reset Dynamic Gas Fee counter for the new epoch

@@ -166,6 +166,9 @@ impl P2PNode {
     /// Tambah peer secara manual (dengan batas MAX_PEERS)
     pub fn add_peer(&self, address: &str, port: u16) -> bool {
         let mut peers = self.peers.lock().unwrap();
+        if peers.iter().any(|p| p.address == address && p.port == port) {
+            return false;
+        }
         if peers.len() >= MAX_PEERS {
             println!("[P2P] Peer limit reached ({}), rejecting {}:{}", MAX_PEERS, address, port);
             return false;
@@ -173,6 +176,127 @@ impl P2PNode {
         peers.push(Peer { address: address.to_string(), port });
         println!("[P2P] Added peer: {}:{} ({}/{})", address, port, peers.len(), MAX_PEERS);
         true
+    }
+
+    fn merge_discovered_peers(&self, discovered: Vec<Peer>) -> usize {
+        let mut peers = self.peers.lock().unwrap();
+        let mut added = 0;
+
+        for candidate in discovered {
+            if peers.len() >= MAX_PEERS {
+                break;
+            }
+
+            // Hindari menambah diri sendiri
+            if candidate.port == self.port
+                && (candidate.address == "127.0.0.1"
+                    || candidate.address == "localhost"
+                    || candidate.address == self.node_address)
+            {
+                continue;
+            }
+
+            if !peers
+                .iter()
+                .any(|p| p.address == candidate.address && p.port == candidate.port)
+            {
+                peers.push(candidate);
+                added += 1;
+            }
+        }
+
+        added
+    }
+
+    /// Bootstrap gossip discovery dari daftar seed peers.
+    pub fn bootstrap_gossip(&self, seeds: &[String]) {
+        for seed in seeds {
+            let trimmed = seed.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let mut parts = trimmed.split(':');
+            let address = parts.next().unwrap_or("").trim();
+            let port = parts
+                .next()
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(0);
+
+            if address.is_empty() || port == 0 {
+                println!("[P2P] Ignoring invalid seed peer: {}", seed);
+                continue;
+            }
+
+            let _ = self.add_peer(address, port);
+        }
+
+        let peers = self.peers.lock().unwrap().clone();
+        for peer in peers {
+            let hello = NetMessage::Hello {
+                address: self.node_address.clone(),
+                port: self.port,
+            };
+            match Self::send_message(&peer, &hello) {
+                Ok(response) => {
+                    if let Ok(NetMessage::PeerExchange(received)) = serde_json::from_str::<NetMessage>(&response) {
+                        let added = self.merge_discovered_peers(received);
+                        if added > 0 {
+                            println!("[P2P] Added {} discovered peers from {}", added, peer.endpoint());
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("[P2P] Seed handshake failed with {}: {}", peer.endpoint(), e);
+                }
+            }
+        }
+    }
+
+    fn is_chain_valid(candidate: &[Block]) -> bool {
+        if candidate.is_empty() {
+            return false;
+        }
+
+        if !candidate[0].is_valid() {
+            return false;
+        }
+
+        for idx in 1..candidate.len() {
+            if Block::validate_block(&candidate[idx], &candidate[idx - 1], 2).is_err() {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Ambil chain terpanjang yang valid dari peers yang terhubung.
+    pub fn sync_longest_chain(&self) -> Result<usize, String> {
+        let peers = self.peers.lock().unwrap().clone();
+        if peers.is_empty() {
+            return Ok(self.chain.lock().unwrap().len());
+        }
+
+        let current_chain = self.chain.lock().unwrap().clone();
+        let mut best_chain = current_chain;
+
+        for peer in peers {
+            if let Ok(candidate) = self.sync_from_peer(&peer) {
+                if candidate.len() > best_chain.len() && Self::is_chain_valid(&candidate) {
+                    best_chain = candidate;
+                }
+            }
+        }
+
+        let best_len = best_chain.len();
+        let mut chain_lock = self.chain.lock().unwrap();
+        if best_len > chain_lock.len() {
+            *chain_lock = best_chain;
+            println!("[P2P] Chain updated from gossip sync: {} blocks", best_len);
+        }
+
+        Ok(chain_lock.len())
     }
 
     /// Kirim pesan ke satu peer (dengan timeout)
@@ -395,6 +519,14 @@ mod tests {
     }
 
     #[test]
+    fn test_add_peer_prevents_duplicate() {
+        let node = P2PNode::new("nfm_test_node", 9000);
+        assert!(node.add_peer("127.0.0.1", 9001));
+        assert!(!node.add_peer("127.0.0.1", 9001));
+        assert_eq!(node.peer_count(), 1);
+    }
+
+    #[test]
     fn test_message_serialization() {
         let msg = NetMessage::Hello { address: "nfm_node_1".to_string(), port: 9000 };
         let json = serde_json::to_string(&msg).unwrap();
@@ -468,6 +600,19 @@ mod tests {
         banlist.manual_ban("bad_peer");
         assert!(banlist.is_banned("bad_peer"));
         assert!(!banlist.is_banned("good_peer"));
+    }
+
+    #[test]
+    fn test_chain_validation_rejects_broken_previous_hash() {
+        let mut b0 = Block::new(0, "genesis".to_string(), "".to_string());
+        b0.mine(2);
+        let mut b1 = Block::new(1, "b1".to_string(), b0.hash.clone());
+        b1.mine(2);
+        let mut b2 = Block::new(2, "b2".to_string(), "invalid_prev".to_string());
+        b2.mine(2);
+
+        let chain = vec![b0, b1, b2];
+        assert!(!P2PNode::is_chain_valid(&chain));
     }
 }
 
