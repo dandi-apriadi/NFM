@@ -13,3 +13,6 @@ pub mod model_audit;
 
 // Langkah 7: NLC intent guard (MVP)
 pub mod nlc_intent;
+
+// Langkah 7: HR-AIS reputation and ingestion gate (MVP)
+pub mod hr_ais;
