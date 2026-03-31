@@ -6,6 +6,7 @@ mod item;
 mod auction;
 mod security;
 mod governance;
+mod governance_api;
 mod network;
 mod transfer;
 mod api;
