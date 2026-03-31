@@ -3,9 +3,11 @@ import NetworkChart from '../components/ui/NetworkChart';
 import { useAppData } from '../context/AppDataContext';
 
 const Dashboard = () => {
-  const { data } = useAppData();
+  const { data, p2p } = useAppData();
   const DUMMY_STATUS = data.status;
   const DUMMY_BLOCKS = data.blocks;
+  const peerRows = p2p.known_peers.slice(0, 5);
+  const p2pOnline = p2p.gossip_enabled && p2p.status === 'online';
 
   const chartData = [45, 52, 48, 70, 85, 74, 90, 82, 95];
 
@@ -53,10 +55,10 @@ const Dashboard = () => {
         <div className="nfm-glass-card" style={{ marginBottom: 0 }}>
           <div className="nfm-stat-tile">
             <div className="nfm-stat-tile__icon nfm-stat-tile__icon--cyan"><Database /></div>
-            <div className="nfm-stat-tile__value">2.4 TB</div>
-            <div className="nfm-stat-tile__label">Storage Occupied</div>
+            <div className="nfm-stat-tile__value">{p2p.peer_count.toLocaleString()}</div>
+            <div className="nfm-stat-tile__label">Connected Peers</div>
             <div className="nfm-stat-tile__trend nfm-stat-tile__trend--up">
-               3,420 Active Nodes
+               Seeds: {p2p.seed_count}
             </div>
           </div>
         </div>
@@ -132,15 +134,22 @@ const Dashboard = () => {
         <div className="nfm-glass-card" style={{ flex: 1, marginBottom: 0 }}>
           <h2 className="text-cyan" style={{ marginBottom: 'var(--space-6)', fontSize: 'var(--text-lg)' }}>Node Connectivity</h2>
           <div className="flex-col gap-4">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="flex justify-between items-center p-4" style={{ background: 'var(--surface-lowest)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.02)' }}>
+            {peerRows.length > 0 ? peerRows.map((peer, i) => (
+              <div key={peer} className="flex justify-between items-center p-4" style={{ background: 'var(--surface-lowest)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.02)' }}>
                 <div className="flex items-center gap-3">
-                  <div className={`nfm-status-dot nfm-status-dot--${i === 3 ? 'syncing' : 'online'}`}></div>
-                  <span className="font-mono text-sm">nfm-peer-00{i}</span>
+                  <div className={`nfm-status-dot nfm-status-dot--${p2pOnline ? 'online' : 'syncing'}`}></div>
+                  <span className="font-mono text-sm">{peer}</span>
                 </div>
-                <span className="text-xs text-muted">98ms</span>
+                <span className="text-xs text-muted">peer #{i + 1}</span>
               </div>
-            ))}
+            )) : (
+              <div className="p-4 text-xs text-muted" style={{ background: 'var(--surface-lowest)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.02)' }}>
+                No peers discovered yet. Add `NFM_P2P_SEEDS` to bootstrap mesh discovery.
+              </div>
+            )}
+            <div className="text-xs text-muted" style={{ paddingLeft: 'var(--space-1)' }}>
+              P2P status: {p2p.status} | Port: {p2p.listening_port} | Last sync: {p2p.last_sync_unix > 0 ? new Date(p2p.last_sync_unix * 1000).toLocaleTimeString() : '-'}
+            </div>
             <button className="nfm-btn-more" style={{ marginTop: 'var(--space-2)' }}>
               Explore Peer Mesh
             </button>

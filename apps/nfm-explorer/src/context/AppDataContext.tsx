@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import type { Block, NFMStatus, NodeStats, Transaction, UserProfile } from '../types';
+import type { Block, NFMStatus, NodeStats, P2PStatus, Transaction, UserProfile } from '../types';
 
 export interface AITask {
   id: string;
@@ -163,6 +163,7 @@ const EMPTY_STATE: AppState = {
 
 interface AppDataContextValue {
   data: AppState;
+  p2p: P2PStatus;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
@@ -171,23 +172,48 @@ interface AppDataContextValue {
 const AppDataContext = createContext<AppDataContextValue | null>(null);
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://127.0.0.1:3000';
+const EMPTY_P2P: P2PStatus = {
+  gossip_enabled: false,
+  listening_port: 0,
+  peer_count: 0,
+  known_peers: [],
+  seed_count: 0,
+  last_sync_unix: 0,
+  chain_blocks: 0,
+  status: 'inactive',
+};
 
 export const AppDataProvider = ({ children }: { children: React.ReactNode }) => {
   const [data, setData] = useState<AppState>(EMPTY_STATE);
+  const [p2p, setP2p] = useState<P2PStatus>(EMPTY_P2P);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
       const token = (import.meta.env.VITE_BRAIN_BEARER_TOKEN as string | undefined)?.trim();
-      const res = await fetch(`${API_BASE_URL}/api/app/state`, {
+      const appReq = fetch(`${API_BASE_URL}/api/app/state`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+
+      const p2pReq = fetch(`${API_BASE_URL}/api/p2p/status`);
+
+      const [appRes, p2pRes] = await Promise.all([appReq, p2pReq]);
+
+      if (!appRes.ok) {
+        throw new Error(`HTTP ${appRes.status}`);
       }
-      const payload = (await res.json()) as AppState;
+
+      const payload = (await appRes.json()) as AppState;
       setData(payload);
+
+      if (p2pRes.ok) {
+        const p2pPayload = (await p2pRes.json()) as P2PStatus;
+        setP2p(p2pPayload);
+      } else {
+        setP2p(EMPTY_P2P);
+      }
+
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load app state');
@@ -203,8 +229,8 @@ export const AppDataProvider = ({ children }: { children: React.ReactNode }) => 
   }, []);
 
   const value = useMemo(
-    () => ({ data, loading, error, refresh }),
-    [data, loading, error],
+    () => ({ data, p2p, loading, error, refresh }),
+    [data, p2p, loading, error],
   );
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

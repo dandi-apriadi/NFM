@@ -57,3 +57,14 @@ export interface NodeStats {
   memory: string;
   bandwidth: string;
 }
+
+export interface P2PStatus {
+  gossip_enabled: boolean;
+  listening_port: number;
+  peer_count: number;
+  known_peers: string[];
+  seed_count: number;
+  last_sync_unix: number;
+  chain_blocks: number;
+  status: string;
+}

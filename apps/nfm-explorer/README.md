@@ -40,6 +40,7 @@ npm run preview
 Explorer mengandalkan endpoint berikut dari backend blockchain:
 
 - `GET /api/app/state`
+- `GET /api/p2p/status`
 - `POST /api/app/wallet/transfer`
 - `POST /api/app/governance/proposal`
 - `POST /api/app/governance/vote`
@@ -59,6 +60,12 @@ Setelah node aktif di port `3000`, jalankan smoke test berikut dari root repo:
 
 ```powershell
 ./scripts/app_actions_smoke.ps1
+```
+
+Untuk stress smoke ringan, jalankan beberapa iterasi sekaligus:
+
+```powershell
+./scripts/app_actions_smoke.ps1 -Repeat 20
 ```
 
 Script ini mengetes flow action utama yang dipakai frontend:
