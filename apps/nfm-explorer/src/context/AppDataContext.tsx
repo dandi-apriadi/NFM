@@ -129,6 +129,7 @@ const EMPTY_STATE: AppState = {
     username: '@operator',
     nfmAddress: 'nfm_unknown',
     balance: 0,
+    reputation: 0,
     joinedAt: Date.now(),
     feedbackCount: 0,
     settings: {

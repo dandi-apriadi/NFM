@@ -35,6 +35,7 @@ export interface UserProfile {
   username: string;
   nfmAddress: string;
   balance: number;
+  reputation?: number;
   joinedAt: number;
   feedbackCount: number;
   avatarUrl?: string;

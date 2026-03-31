@@ -359,9 +359,9 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         .enumerate()
         .map(|(idx, log)| serde_json::json!({
             "id": format!("b-{}", idx + 1),
-            "timestamp": now_ms - ((idx as i64) * 300_000),
+            "timestamp": log.timestamp.saturating_mul(1000),
             "rarity": "COMMON",
-            "rewardInfo": log
+            "rewardInfo": format!("{} by {}: {}", log.action, log.admin, log.reason)
         }))
         .collect();
 
@@ -374,8 +374,8 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         .map(|(idx, log)| serde_json::json!({
             "id": format!("n-{}", idx + 1),
             "type": "SYSTEM",
-            "content": log,
-            "timestamp": now_ms - ((idx as i64) * 180_000)
+            "content": format!("{} on {} ({})", log.action, log.target, log.reason),
+            "timestamp": log.timestamp.saturating_mul(1000)
         }))
         .collect();
 
@@ -413,6 +413,7 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
             "username": user_alias,
             "nfmAddress": state.node_address,
             "balance": wallets.balances.get(&state.node_address).copied().unwrap_or(0.0),
+            "reputation": governance.get_reputation(&state.node_address),
             "joinedAt": joined_at_ms,
             "feedbackCount": completed.len(),
             "settings": {

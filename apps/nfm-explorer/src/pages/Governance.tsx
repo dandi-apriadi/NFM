@@ -6,6 +6,8 @@ const Governance = () => {
   const { data, refresh } = useAppData();
   const DUMMY_PROPOSALS = data.proposals;
   const DUMMY_USER = data.user_profile;
+  const reputation = Number(DUMMY_USER.reputation ?? 0);
+  const canVote = reputation > 0;
 
   const handleCreateProposal = async () => {
     const title = window.prompt('Proposal title');
@@ -22,12 +24,22 @@ const Governance = () => {
   };
 
   const handleVote = async (proposalId: string, approve: boolean) => {
+    if (!canVote) {
+      window.alert('Voting requires reputation > 0. Participate in missions first to build reputation.');
+      return;
+    }
+
     try {
       await appVoteProposal(proposalId, approve, DUMMY_USER.nfmAddress);
       await refresh();
       window.alert('Vote submitted');
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Vote failed');
+      const message = e instanceof Error ? e.message : 'Vote failed';
+      if (message.toLowerCase().includes('no reputation')) {
+        window.alert('Vote rejected by backend: your reputation is still 0. Complete governance tasks first.');
+      } else {
+        window.alert(message);
+      }
     }
   };
 
@@ -41,7 +53,8 @@ const Governance = () => {
         <div className="flex items-center gap-6">
           <div className="text-right hide-mobile">
             <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Your Voting Power</div>
-            <div className="font-mono text-cyan font-bold">{Math.floor(DUMMY_USER.balance).toLocaleString()} VP</div>
+            <div className="font-mono text-cyan font-bold">{Math.floor(reputation).toLocaleString()} REP</div>
+            {!canVote && <div className="text-[10px] text-muted mt-1">Need reputation &gt; 0 to vote</div>}
           </div>
           <button className="nfm-btn nfm-btn--primary" onClick={handleCreateProposal}>
             <Plus size={16} /> Create Proposal
@@ -106,8 +119,8 @@ const Governance = () => {
                          
                          {prop.status === 'ACTIVE' ? (
                            <div className="flex gap-2">
-                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--success)', color: 'var(--success)'}} onClick={() => handleVote(prop.id, true)}>Vote For</button>
-                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--hyper-pink)', color: 'var(--hyper-pink)'}} onClick={() => handleVote(prop.id, false)}>Vote Against</button>
+                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--success)', color: 'var(--success)'}} onClick={() => handleVote(prop.id, true)} disabled={!canVote} title={!canVote ? 'Reputation required' : undefined}>Vote For</button>
+                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--hyper-pink)', color: 'var(--hyper-pink)'}} onClick={() => handleVote(prop.id, false)} disabled={!canVote} title={!canVote ? 'Reputation required' : undefined}>Vote Against</button>
                            </div>
                          ) : (
                            <button className="nfm-btn nfm-btn--ghost nfm-btn--sm border-white/10 text-muted">View Details</button>
