@@ -1,10 +1,11 @@
-use crate::block::Block;
+use crate::block::{Block, BlockData};
 use nfm_ai_engine::distributed_brain::{
     DataClass, GeoDistributedBrainDb, NodeMeta, RequestProfile, RouterWeights,
 };
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 use sha2::{Sha256, Digest};
 
 // ======================================================================
@@ -12,6 +13,14 @@ use sha2::{Sha256, Digest};
 // ======================================================================
 const MAX_GET_PER_MINUTE: u32 = 1000;
 const MAX_POST_PER_MINUTE: u32 = 300;
+const STATUS_CACHE_TTL_SECS: u64 = 2;
+const BRAIN_SNAPSHOT_KEY: &[u8] = b"brain_snapshot_v1";
+
+#[derive(Clone)]
+pub struct StatusCacheEntry {
+    pub generated_at: Instant,
+    pub payload: String,
+}
 
 struct RateLimiter {
     requests: HashMap<String, (u32, std::time::Instant)>,
@@ -101,6 +110,334 @@ fn apply_universal_gas_fee(state: &ApiState, address: &str) -> Result<f64, Strin
     Ok(fee)
 }
 
+fn persist_brain_snapshot(state: &ApiState, brain: &GeoDistributedBrainDb) -> Result<(), String> {
+    let store = state.brain_snapshot_store.lock().unwrap();
+    if let Some(db) = store.as_ref() {
+        let snapshot = brain.export_snapshot();
+        let bytes = serde_json::to_vec(&snapshot).map_err(|e| e.to_string())?;
+        db.insert(BRAIN_SNAPSHOT_KEY, bytes).map_err(|e| e.to_string())?;
+        db.flush().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn format_bytes(bytes: usize) -> String {
+    if bytes < 1024 {
+        format!("{} Bytes", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", (bytes as f64) / 1024.0)
+    } else {
+        format!("{:.2} MB", (bytes as f64) / (1024.0 * 1024.0))
+    }
+}
+
+fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
+    let chain = state.chain.lock().unwrap();
+    let wallets = state.wallets.lock().unwrap();
+    let mempool = state.mempool.lock().unwrap();
+    let missions = state.mission_engine.lock().unwrap();
+    let governance = state.governance_engine.lock().unwrap();
+    let admin = state.admin_engine.lock().unwrap();
+    let aliases = state.aliases.lock().unwrap();
+    let brain = state.brain_db.lock().unwrap();
+    let total_burned = *state.total_burned.lock().unwrap();
+
+    let now_ms = chrono::Utc::now().timestamp_millis();
+
+    let blocks: Vec<serde_json::Value> = chain
+        .iter()
+        .rev()
+        .take(40)
+        .map(|b| {
+            let parsed = serde_json::from_str::<BlockData>(&b.data).ok();
+            let tx_count = parsed.as_ref().map(|p| p.transactions.len()).unwrap_or(0);
+            let rewards = parsed
+                .as_ref()
+                .map(|p| p.rewards.iter().map(|r| r.amount).sum::<f64>())
+                .unwrap_or(0.0);
+            let miner = parsed
+                .as_ref()
+                .and_then(|p| p.rewards.first().map(|r| r.address.clone()))
+                .unwrap_or_else(|| "nfm_validator_unknown".to_string());
+
+            serde_json::json!({
+                "index": b.index,
+                "hash": b.hash,
+                "previous_hash": b.previous_hash,
+                "timestamp": b.timestamp.saturating_mul(1000),
+                "transactions": tx_count,
+                "size": format_bytes(b.data.len()),
+                "miner": miner,
+                "rewards": rewards
+            })
+        })
+        .collect();
+
+    let pending_transactions: Vec<serde_json::Value> = mempool
+        .iter()
+        .enumerate()
+        .map(|(idx, raw)| {
+            let parsed: serde_json::Value = serde_json::from_str(raw).unwrap_or_default();
+            let from = parsed["address"].as_str().unwrap_or("nfm_unknown");
+            let to = parsed["target"].as_str().unwrap_or("nfm_unknown");
+            let amount = parsed["amount"].as_f64().unwrap_or(0.0);
+            let tx_type = match parsed["type"].as_str().unwrap_or("TRANSFER") {
+                "BURN" => "BURN",
+                "STAKE" | "UNSTAKE" => "SMART_CONTRACT",
+                _ => "TRANSFER",
+            };
+
+            serde_json::json!({
+                "txid": format!("pending-{}-{}", idx + 1, now_ms),
+                "type": tx_type,
+                "from": from,
+                "to": to,
+                "amount": amount,
+                "timestamp": now_ms,
+                "fee": 0.0,
+                "status": "PENDING"
+            })
+        })
+        .collect();
+
+    let completed = missions
+        .completed_missions
+        .get(&state.node_address)
+        .cloned()
+        .unwrap_or_default();
+
+    let quests: Vec<serde_json::Value> = missions
+        .available_missions
+        .iter()
+        .map(|m| {
+            let assignment = missions
+                .active_assignments
+                .get(&format!("{}:{}", state.node_address, m.id));
+            let required_units = m.work_type.required_units();
+            let current_units = assignment.map(|a| a.current_units).unwrap_or(0);
+            let status = if completed.contains(&m.id) {
+                "COMPLETED"
+            } else if assignment
+                .map(|a| a.status == crate::mission::MissionStatus::PendingVerification)
+                .unwrap_or(false)
+            {
+                "CLAIMABLE"
+            } else {
+                "ACTIVE"
+            };
+            serde_json::json!({
+                "id": format!("q-{}", m.id),
+                "title": m.name,
+                "description": m.description,
+                "rewardNVC": m.reward_nvc,
+                "progress": current_units,
+                "total": required_units,
+                "status": status
+            })
+        })
+        .collect();
+
+    let wallets_list: Vec<serde_json::Value> = wallets
+        .balances
+        .iter()
+        .map(|(address, balance)| serde_json::json!({
+            "name": if *address == state.node_address { "Main Vault" } else { "Wallet" },
+            "address": address,
+            "balanceNVC": *balance,
+            "balanceETH": 0.0,
+            "isActive": *address == state.node_address
+        }))
+        .collect();
+
+    let user_alias = aliases
+        .iter()
+        .find_map(|(alias, address)| {
+            if *address == state.node_address {
+                Some(alias.clone())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "@founder".to_string());
+
+    let joined_at_ms = chain
+        .first()
+        .map(|b| b.timestamp.saturating_mul(1000))
+        .unwrap_or(now_ms);
+
+    let api_docs = vec![
+        serde_json::json!({ "method": "GET", "path": "/api/status", "description": "Core node status and tokenomics", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/blocks", "description": "Recent blocks", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/mempool", "description": "Pending intents", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/transfer/create", "description": "Queue a transfer intent", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/transfer/secure", "description": "Signed transfer", "authRequired": true }),
+        serde_json::json!({ "method": "GET", "path": "/api/brain/status", "description": "Distributed brain health", "authRequired": false }),
+    ];
+
+    let proposals: Vec<serde_json::Value> = governance
+        .proposals
+        .iter()
+        .rev()
+        .take(20)
+        .map(|p| serde_json::json!({
+            "id": format!("prop-{}", p.id),
+            "title": p.title,
+            "creator": p.proposer,
+            "status": if p.is_active { "ACTIVE" } else if p.votes_for >= p.votes_against { "PASSED" } else { "REJECTED" },
+            "forVotes": p.votes_for,
+            "againstVotes": p.votes_against,
+            "endTime": now_ms + if p.is_active { 86400000 } else { 0 }
+        }))
+        .collect();
+
+    let ai_tasks: Vec<serde_json::Value> = mempool
+        .iter()
+        .enumerate()
+        .take(12)
+        .map(|(idx, raw)| {
+            let parsed: serde_json::Value = serde_json::from_str(raw).unwrap_or_default();
+            serde_json::json!({
+                "id": format!("task-{:03}", idx + 1),
+                "name": parsed["type"].as_str().unwrap_or("MESH_TASK"),
+                "status": "QUEUED",
+                "progress": 0,
+                "model": "NFM-Orchestrator",
+                "cost": parsed["amount"].as_f64().unwrap_or(0.0) * 0.001
+            })
+        })
+        .collect();
+
+    let snapshot = brain.export_snapshot();
+
+    let drive_files: Vec<serde_json::Value> = snapshot
+        .records
+        .values()
+        .take(20)
+        .enumerate()
+        .map(|(idx, rec)| {
+            let serialized = rec.value.to_string();
+            serde_json::json!({
+                "id": format!("f-{}", idx + 1),
+                "name": rec.key,
+                "size": format!("{} B", serialized.len()),
+                "type": "FRAGMENT",
+                "fragments": 1,
+                "health": 100,
+                "uploadedAt": now_ms - ((idx as i64) * 60_000)
+            })
+        })
+        .collect();
+
+    let kg_concepts: Vec<serde_json::Value> = snapshot
+        .records
+        .values()
+        .take(24)
+        .enumerate()
+        .map(|(idx, rec)| {
+            let serialized = rec.value.to_string();
+            serde_json::json!({
+                "id": format!("c-{}", idx + 1),
+                "name": rec.key,
+                "connections": serialized.len().min(256),
+                "category": "DOCUMENT"
+            })
+        })
+        .collect();
+
+    let box_history: Vec<serde_json::Value> = admin
+        .logs
+        .iter()
+        .rev()
+        .take(10)
+        .enumerate()
+        .map(|(idx, log)| serde_json::json!({
+            "id": format!("b-{}", idx + 1),
+            "timestamp": now_ms - ((idx as i64) * 300_000),
+            "rarity": "COMMON",
+            "rewardInfo": log
+        }))
+        .collect();
+
+    let mystery_news: Vec<serde_json::Value> = admin
+        .logs
+        .iter()
+        .rev()
+        .take(10)
+        .enumerate()
+        .map(|(idx, log)| serde_json::json!({
+            "id": format!("n-{}", idx + 1),
+            "type": "SYSTEM",
+            "content": log,
+            "timestamp": now_ms - ((idx as i64) * 180_000)
+        }))
+        .collect();
+
+    let reward_catalog: Vec<serde_json::Value> = missions
+        .available_missions
+        .iter()
+        .take(8)
+        .enumerate()
+        .map(|(idx, m)| serde_json::json!({
+            "id": format!("r-{}", idx + 1),
+            "name": m.name,
+            "description": m.description,
+            "rarity": match m.difficulty {
+                crate::mission::Difficulty::Easy => "COMMON",
+                crate::mission::Difficulty::Medium => "RARE",
+                crate::mission::Difficulty::Hard => "EPIC",
+                crate::mission::Difficulty::Expert => "LEGENDARY",
+            },
+            "type": "NVC"
+        }))
+        .collect();
+
+    serde_json::json!({
+        "status": {
+            "node": state.node_address,
+            "version": "NFM Vault v1.2",
+            "status": "ONLINE",
+            "blocks": chain.len(),
+            "total_burned": total_burned,
+            "peers": brain.node_count()
+        },
+        "blocks": blocks,
+        "transactions": pending_transactions,
+        "user_profile": {
+            "username": user_alias,
+            "nfmAddress": state.node_address,
+            "balance": wallets.balances.get(&state.node_address).copied().unwrap_or(0.0),
+            "joinedAt": joined_at_ms,
+            "feedbackCount": completed.len(),
+            "settings": {
+                "rpc": "http://127.0.0.1:3000",
+                "theme": "mesh",
+                "notifications": {
+                    "rewards": true,
+                    "network": true,
+                    "security": true
+                }
+            }
+        },
+        "wallets": wallets_list,
+        "node_stats": {
+            "uptime": format!("{} blocks", chain.len()),
+            "cpu": (mempool.len() as f64 * 3.5).min(95.0),
+            "memory": format!("{:.2} GB / 8 GB", (chain.len() as f64 * 0.01).max(0.4)),
+            "bandwidth": format!("{} rec/s", brain.record_count())
+        },
+        "ai_tasks": ai_tasks,
+        "drive_files": drive_files,
+        "kg_concepts": kg_concepts,
+        "market_items": [],
+        "quests": quests,
+        "box_history": box_history,
+        "reward_catalog": reward_catalog,
+        "mystery_news": mystery_news,
+        "proposals": proposals,
+        "api_docs": api_docs
+    })
+}
+
 /// State yang dibagikan ke API server
 pub struct ApiState {
     pub chain: Arc<Mutex<Vec<Block>>>,
@@ -126,6 +463,10 @@ pub struct ApiState {
     pub brain_db: Arc<Mutex<GeoDistributedBrainDb>>,
     /// Whitelisted bearer tokens untuk public /api/brain/* endpoints
     pub brain_tokens: Arc<Mutex<Vec<String>>>,
+    /// Cache respons /api/status untuk mengurangi lock contention di endpoint agregat
+    pub status_cache: Arc<Mutex<Option<StatusCacheEntry>>>,
+    /// Penyimpanan snapshot brain di sled untuk persistensi antar restart
+    pub brain_snapshot_store: Arc<Mutex<Option<sled::Db>>>,
 }
 
 /// Mulai REST API server di background thread
@@ -182,7 +523,7 @@ pub fn start_api_server(state: ApiState, port: u16) {
                     .with_status_code(204)
                     .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
                     .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Methods", "GET, POST, OPTIONS").unwrap())
-                    .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Headers", "Content-Type, x-nfm-signature").unwrap());
+                    .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Headers", "Content-Type, Authorization, x-nfm-signature").unwrap());
                 let _ = request.respond(response);
                 continue;
             }
@@ -250,65 +591,150 @@ pub fn start_api_server(state: ApiState, port: u16) {
                     (200, "application/json", json)
                 },
                 ("GET", "/api/status") => {
-                    let chain = state.chain.lock().unwrap();
-                    let wallets = state.wallets.lock().unwrap();
-                    let fees = state.total_fees.lock().unwrap();
-                    let burned = state.total_burned.lock().unwrap();
-                    let effects = state.active_effects.lock().unwrap();
-                    let missions = state.mission_engine.lock().unwrap();
-                    let staking = state.staking_pool.lock().unwrap();
-                    let aliases = state.aliases.lock().unwrap();
-                    let mempool = state.mempool.lock().unwrap();
-                    let mempool_count = mempool.len();
-                    
-                    let last_block_timestamp = chain.last().map(|b| b.timestamp).unwrap_or(0);
-                    let completed_missions = missions.completed_missions.get(&state.node_address)
-                        .cloned()
-                        .unwrap_or_default();
-                    
-                    let active_missions: Vec<serde_json::Value> = missions.active_assignments.values()
-                        .filter(|a| a.address == state.node_address && a.status == crate::mission::MissionStatus::InProgress)
-                        .map(|a| {
-                            let min_duration = missions.available_missions.iter()
-                                .find(|m| m.id == a.mission_id)
-                                .map(|m| m.work_type.min_duration_secs())
-                                .unwrap_or(5);
-                            let progress_pct = if a.required_units == 0 {
-                                0
+                    {
+                        let cache = state.status_cache.lock().unwrap();
+                        if let Some(entry) = cache.as_ref() {
+                            if entry.generated_at.elapsed() < Duration::from_secs(STATUS_CACHE_TTL_SECS) {
+                                (200, "application/json", entry.payload.clone())
                             } else {
-                                ((a.current_units.saturating_mul(100)) / a.required_units) as u32
-                            };
-                            serde_json::json!({
-                                "id": a.mission_id,
-                                "started_at": a.started_at,
-                                "min_duration_secs": min_duration,
-                                "current_units": a.current_units,
-                                "required_units": a.required_units,
-                                "progress_pct": progress_pct
-                            })
-                        })
-                        .collect();
+                                drop(cache);
+                                let chain = state.chain.lock().unwrap();
+                                let wallets = state.wallets.lock().unwrap();
+                                let fees = state.total_fees.lock().unwrap();
+                                let burned = state.total_burned.lock().unwrap();
+                                let effects = state.active_effects.lock().unwrap();
+                                let missions = state.mission_engine.lock().unwrap();
+                                let staking = state.staking_pool.lock().unwrap();
+                                let aliases = state.aliases.lock().unwrap();
+                                let mempool = state.mempool.lock().unwrap();
+                                let mempool_count = mempool.len();
 
-                    let status_json = serde_json::json!({
-                        "node": state.node_address,
-                        "balance": wallets.balances.get(&state.node_address).unwrap_or(&0.0),
-                        "blocks": chain.len(),
-                        "total_fees": *fees,
-                        "total_burned": *burned,
-                        "active_effects": *effects,
-                        "missions": missions.available_missions,
-                        "completed_missions": completed_missions,
-                        "active_missions": active_missions,
-                        "staking": *staking,
-                        "aliases": *aliases,
-                        "mempool_count": mempool_count,
-                        "block_interval_secs": 300,
-                        "last_block_timestamp": last_block_timestamp,
-                        "next_block_timestamp": *state.next_block_timestamp.lock().unwrap(),
-                        "status": "running",
-                        "version": "1.0.0-mesh"
-                    });
-                    (200, "application/json", status_json.to_string())
+                                let last_block_timestamp = chain.last().map(|b| b.timestamp).unwrap_or(0);
+                                let completed_missions = missions.completed_missions.get(&state.node_address)
+                                    .cloned()
+                                    .unwrap_or_default();
+
+                                let active_missions: Vec<serde_json::Value> = missions.active_assignments.values()
+                                    .filter(|a| a.address == state.node_address && a.status == crate::mission::MissionStatus::InProgress)
+                                    .map(|a| {
+                                        let min_duration = missions.available_missions.iter()
+                                            .find(|m| m.id == a.mission_id)
+                                            .map(|m| m.work_type.min_duration_secs())
+                                            .unwrap_or(5);
+                                        let progress_pct = if a.required_units == 0 {
+                                            0
+                                        } else {
+                                            ((a.current_units.saturating_mul(100)) / a.required_units) as u32
+                                        };
+                                        serde_json::json!({
+                                            "id": a.mission_id,
+                                            "started_at": a.started_at,
+                                            "min_duration_secs": min_duration,
+                                            "current_units": a.current_units,
+                                            "required_units": a.required_units,
+                                            "progress_pct": progress_pct
+                                        })
+                                    })
+                                    .collect();
+
+                                let status_json = serde_json::json!({
+                                    "node": state.node_address,
+                                    "balance": wallets.balances.get(&state.node_address).unwrap_or(&0.0),
+                                    "blocks": chain.len(),
+                                    "total_fees": *fees,
+                                    "total_burned": *burned,
+                                    "active_effects": *effects,
+                                    "missions": missions.available_missions,
+                                    "completed_missions": completed_missions,
+                                    "active_missions": active_missions,
+                                    "staking": *staking,
+                                    "aliases": *aliases,
+                                    "mempool_count": mempool_count,
+                                    "block_interval_secs": 300,
+                                    "last_block_timestamp": last_block_timestamp,
+                                    "next_block_timestamp": *state.next_block_timestamp.lock().unwrap(),
+                                    "status": "running",
+                                    "version": "1.0.0-mesh"
+                                });
+                                let payload = status_json.to_string();
+                                *state.status_cache.lock().unwrap() = Some(StatusCacheEntry {
+                                    generated_at: Instant::now(),
+                                    payload: payload.clone(),
+                                });
+                                (200, "application/json", payload)
+                            }
+                        } else {
+                            drop(cache);
+                            let chain = state.chain.lock().unwrap();
+                            let wallets = state.wallets.lock().unwrap();
+                            let fees = state.total_fees.lock().unwrap();
+                            let burned = state.total_burned.lock().unwrap();
+                            let effects = state.active_effects.lock().unwrap();
+                            let missions = state.mission_engine.lock().unwrap();
+                            let staking = state.staking_pool.lock().unwrap();
+                            let aliases = state.aliases.lock().unwrap();
+                            let mempool = state.mempool.lock().unwrap();
+                            let mempool_count = mempool.len();
+
+                            let last_block_timestamp = chain.last().map(|b| b.timestamp).unwrap_or(0);
+                            let completed_missions = missions.completed_missions.get(&state.node_address)
+                                .cloned()
+                                .unwrap_or_default();
+
+                            let active_missions: Vec<serde_json::Value> = missions.active_assignments.values()
+                                .filter(|a| a.address == state.node_address && a.status == crate::mission::MissionStatus::InProgress)
+                                .map(|a| {
+                                    let min_duration = missions.available_missions.iter()
+                                        .find(|m| m.id == a.mission_id)
+                                        .map(|m| m.work_type.min_duration_secs())
+                                        .unwrap_or(5);
+                                    let progress_pct = if a.required_units == 0 {
+                                        0
+                                    } else {
+                                        ((a.current_units.saturating_mul(100)) / a.required_units) as u32
+                                    };
+                                    serde_json::json!({
+                                        "id": a.mission_id,
+                                        "started_at": a.started_at,
+                                        "min_duration_secs": min_duration,
+                                        "current_units": a.current_units,
+                                        "required_units": a.required_units,
+                                        "progress_pct": progress_pct
+                                    })
+                                })
+                                .collect();
+
+                            let status_json = serde_json::json!({
+                                "node": state.node_address,
+                                "balance": wallets.balances.get(&state.node_address).unwrap_or(&0.0),
+                                "blocks": chain.len(),
+                                "total_fees": *fees,
+                                "total_burned": *burned,
+                                "active_effects": *effects,
+                                "missions": missions.available_missions,
+                                "completed_missions": completed_missions,
+                                "active_missions": active_missions,
+                                "staking": *staking,
+                                "aliases": *aliases,
+                                "mempool_count": mempool_count,
+                                "block_interval_secs": 300,
+                                "last_block_timestamp": last_block_timestamp,
+                                "next_block_timestamp": *state.next_block_timestamp.lock().unwrap(),
+                                "status": "running",
+                                "version": "1.0.0-mesh"
+                            });
+                            let payload = status_json.to_string();
+                            *state.status_cache.lock().unwrap() = Some(StatusCacheEntry {
+                                generated_at: Instant::now(),
+                                payload: payload.clone(),
+                            });
+                            (200, "application/json", payload)
+                        }
+                    }
+                },
+                ("GET", "/api/app/state") => {
+                    let payload = build_frontend_app_state(&state);
+                    (200, "application/json", payload.to_string())
                 },
                 ("GET", "/api/wallets") => {
                     let wallets = state.wallets.lock().unwrap();
@@ -635,6 +1061,49 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         }
                         }
                     }
+                    }
+                },
+                // ==============================================================
+                // Transfer Intent Creation (lightweight, unsigned)
+                // Body: { from, to, amount }
+                // ==============================================================
+                ("POST", "/api/transfer/create") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let from = data["from"].as_str().unwrap_or("").to_string();
+                    let to = data["to"].as_str().unwrap_or("").to_string();
+                    let amount = data["amount"].as_f64().unwrap_or(0.0);
+
+                    if from.is_empty() || to.is_empty() || amount <= 0.0 {
+                        (400, "application/json", serde_json::json!({
+                            "error": "Missing or invalid fields: from, to, amount"
+                        }).to_string())
+                    } else {
+                        let admin = state.admin_engine.lock().unwrap();
+                        if let Err(e) = admin.can_transact(&from) {
+                            (403, "application/json", serde_json::json!({
+                                "error": format!("Blocked: {}", e)
+                            }).to_string())
+                        } else {
+                            drop(admin);
+                            let intent = serde_json::json!({
+                                "type": "TRANSFER_INTENT",
+                                "address": from,
+                                "target": to,
+                                "amount": amount,
+                                "created_at": chrono::Utc::now().timestamp()
+                            }).to_string();
+                            let mut m_lock = state.mempool.lock().unwrap();
+                            m_lock.push(intent);
+
+                            (202, "application/json", serde_json::json!({
+                                "status": "accepted",
+                                "message": "Transfer intent queued",
+                                "mempool_count": m_lock.len()
+                            }).to_string())
+                        }
                     }
                 },
                 ("POST", "/api/nlc") => {
@@ -1254,6 +1723,7 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         } else {
                             let mut brain = state.brain_db.lock().unwrap();
                             brain.register_node(NodeMeta::new(&node_id, &region, latitude, longitude));
+                            let _ = persist_brain_snapshot(&state, &brain);
                             (200, "application/json", serde_json::json!({
                                 "status": "success",
                                 "node_id": node_id,
@@ -1282,11 +1752,14 @@ pub fn start_api_server(state: ApiState, port: u16) {
 
                         let mut brain = state.brain_db.lock().unwrap();
                         match brain.update_runtime_metrics(&node_id, latency, queue_depth, error_rate, healthy) {
-                            Ok(_) => (200, "application/json", serde_json::json!({
-                                "status": "success",
-                                "node_id": node_id,
-                                "healthy": healthy
-                            }).to_string()),
+                            Ok(_) => {
+                                let _ = persist_brain_snapshot(&state, &brain);
+                                (200, "application/json", serde_json::json!({
+                                    "status": "success",
+                                    "node_id": node_id,
+                                    "healthy": healthy
+                                }).to_string())
+                            },
                             Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
                         }
                     }
@@ -1317,7 +1790,10 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         } else {
                             let mut brain = state.brain_db.lock().unwrap();
                             match brain.upsert_record(&key, value, class, &owner_node) {
-                                Ok(_) => (200, "application/json", serde_json::json!({ "status": "success", "key": key }).to_string()),
+                                Ok(_) => {
+                                    let _ = persist_brain_snapshot(&state, &brain);
+                                    (200, "application/json", serde_json::json!({ "status": "success", "key": key }).to_string())
+                                },
                                 Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
                             }
                         }
@@ -1334,6 +1810,7 @@ pub fn start_api_server(state: ApiState, port: u16) {
                     } else {
                         let brain = state.brain_db.lock().unwrap();
                         let snapshot = brain.export_snapshot();
+                        let _ = persist_brain_snapshot(&state, &brain);
                         (200, "application/json", serde_json::json!({
                             "status": "success",
                             "snapshot": snapshot
@@ -1357,6 +1834,7 @@ pub fn start_api_server(state: ApiState, port: u16) {
                             Ok(snapshot) => {
                                 let mut brain = state.brain_db.lock().unwrap();
                                 brain.import_snapshot(snapshot);
+                                let _ = persist_brain_snapshot(&state, &brain);
                                 (200, "application/json", serde_json::json!({
                                     "status": "success",
                                     "nodes": brain.node_count(),
@@ -1534,7 +2012,7 @@ pub fn start_api_server(state: ApiState, port: u16) {
                 .with_header(tiny_http::Header::from_bytes("Content-Type", content_type).unwrap())
                 .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap())
                 .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Methods", "GET, POST, OPTIONS").unwrap())
-                .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Headers", "Content-Type, x-nfm-signature").unwrap());
+                .with_header(tiny_http::Header::from_bytes("Access-Control-Allow-Headers", "Content-Type, Authorization, x-nfm-signature").unwrap());
             let _ = request.respond(response);
         }
     });
@@ -1794,6 +2272,8 @@ mod tests {
             next_block_timestamp: Arc::new(Mutex::new(0)),
             brain_db: Arc::new(Mutex::new(GeoDistributedBrainDb::new())),
             brain_tokens: Arc::new(Mutex::new(Vec::new())),
+            status_cache: Arc::new(Mutex::new(None)),
+            brain_snapshot_store: Arc::new(Mutex::new(None)),
         };
 
         start_api_server(state, port);
@@ -2141,6 +2621,32 @@ mod tests {
         let (status, response_body) = send_post(port, "/api/transfer/secure", "{}", &[]);
         assert_eq!(status, 429);
         assert!(response_body.contains("Rate limit exceeded"));
+    }
+
+    #[test]
+    fn test_transfer_create_queues_intent() {
+        let secret = "test_secret_transfer_create";
+        let node_address = "nfm_founder_test";
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, WalletEngine::new(), admin, true);
+
+        let body = serde_json::json!({
+            "from": "nfm_sender",
+            "to": "nfm_receiver",
+            "amount": 2.5
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/transfer/create", &body, &[]);
+        assert_eq!(status, 202);
+        assert!(response_body.contains("accepted"));
+
+        let (status, mempool_body) = send_get(port, "/api/mempool", &[]);
+        assert_eq!(status, 200);
+        assert!(mempool_body.contains("TRANSFER_INTENT"));
     }
 
     #[test]

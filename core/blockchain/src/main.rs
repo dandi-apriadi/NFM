@@ -16,7 +16,6 @@ mod storage;
 mod consensus;
 mod contract;
 mod mission;
-mod load_test;
 mod config;
 
 use crate::identity::NfmId;
@@ -32,7 +31,7 @@ use crate::wallet::CryptoWallet;
 use crate::contract::ContractEngine;
 use crate::mission::MissionEngine;
 use block::Block;
-use nfm_ai_engine::distributed_brain::{GeoDistributedBrainDb, NodeMeta};
+use nfm_ai_engine::distributed_brain::{BrainSnapshot, GeoDistributedBrainDb, NodeMeta};
 use std::sync::{Arc, Mutex};
 
 struct Blockchain {
@@ -244,10 +243,40 @@ fn main() {
 
     let shared_mempool: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let shared_next_block = Arc::new(Mutex::new(chrono::Utc::now().timestamp() as u64 + 300));
+    let brain_snapshot_db_path = format!("{}_brain_snapshot.db", db_path);
+    let brain_snapshot_store = match sled::open(&brain_snapshot_db_path) {
+        Ok(db) => Some(db),
+        Err(e) => {
+            println!("[BRAIN] Snapshot DB unavailable (continuing in-memory): {}", e);
+            None
+        }
+    };
     let shared_brain_db = Arc::new(Mutex::new(GeoDistributedBrainDb::new()));
     {
         let mut brain = shared_brain_db.lock().unwrap();
-        brain.register_node(NodeMeta::new(&founder.address, "id", -6.2088, 106.8456));
+        let mut restored = false;
+        if let Some(db) = brain_snapshot_store.as_ref() {
+            if let Ok(Some(bytes)) = db.get(b"brain_snapshot_v1") {
+                match serde_json::from_slice::<BrainSnapshot>(&bytes) {
+                    Ok(snapshot) => {
+                        brain.import_snapshot(snapshot);
+                        restored = true;
+                        println!(
+                            "[BRAIN] Snapshot restored from disk (nodes={}, records={})",
+                            brain.node_count(),
+                            brain.record_count()
+                        );
+                    }
+                    Err(e) => {
+                        println!("[BRAIN] Failed to decode snapshot (using fresh state): {}", e);
+                    }
+                }
+            }
+        }
+
+        if !restored && brain.node_count() == 0 {
+            brain.register_node(NodeMeta::new(&founder.address, "id", -6.2088, 106.8456));
+        }
     }
 
     let api_state = api::ApiState {
@@ -270,6 +299,8 @@ fn main() {
         next_block_timestamp: shared_next_block.clone(),
         brain_db: shared_brain_db.clone(),
         brain_tokens: Arc::new(Mutex::new(Vec::new())), // Whitelist tokens—empty means open access
+        status_cache: Arc::new(Mutex::new(None)),
+        brain_snapshot_store: Arc::new(Mutex::new(brain_snapshot_store)),
     };
     api::start_api_server(api_state, node_config.api_port);
     println!("  Dashboard running at http://127.0.0.1:{}", node_config.api_port);

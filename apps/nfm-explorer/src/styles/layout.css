@@ -1,0 +1,241 @@
+/* ============================================================================
+ * LAYOUT STYLES — AppShell, TopBar, Sidebar
+ * ============================================================================ */
+
+/* --- App Shell Grid --- */
+.nfm-app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background-color: var(--bg-deep);
+  /* High-Tech Dot Grid Layered with Ambient Neon Glows */
+  background-image: 
+    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at top right, rgba(0, 229, 255, 0.06), transparent 50%),
+    radial-gradient(circle at bottom left, rgba(21, 101, 192, 0.08), transparent 60%);
+  background-size: 24px 24px, 100% 100%, 100% 100%;
+  background-position: center;
+}
+
+.nfm-interactive-grid, .nfm-interactive-grid--bubble {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Base grid mask (Normal dots) */
+.nfm-interactive-grid {
+  background-image: radial-gradient(rgba(0, 229, 255, 0.45) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: center;
+  mask-image: radial-gradient(120px circle at var(--mouse-x, -1000px) var(--mouse-y, -1000px), black 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(120px circle at var(--mouse-x, -1000px) var(--mouse-y, -1000px), black 0%, transparent 100%);
+}
+
+/* Inner Bubble Layer (Swollen center dots) */
+.nfm-interactive-grid--bubble {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.9) 2.5px, transparent 2.5px);
+  background-size: 24px 24px;
+  background-position: center;
+  /* Glows only right under the mouse */
+  mask-image: radial-gradient(40px circle at var(--mouse-x, -1000px) var(--mouse-y, -1000px), black 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(40px circle at var(--mouse-x, -1000px) var(--mouse-y, -1000px), black 0%, transparent 100%);
+}
+
+.nfm-main-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.nfm-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-8);
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* --- Sidebar --- */
+.nfm-sidebar {
+  width: var(--sidebar-width);
+  height: 100vh;
+  background: var(--glass-bg-solid);
+  backdrop-filter: var(--glass-blur);
+  border-right: var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6) 0;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.nfm-sidebar__logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-6) var(--space-8);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.nfm-sidebar__nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-section {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: var(--space-4) 0 var(--space-2) var(--space-2);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  font-weight: 500;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.nav-item svg {
+  color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.nav-item:hover {
+  background: rgba(41, 121, 255, 0.08); /* Unified neon hover */
+  color: var(--text-primary);
+}
+.nav-item:hover svg {
+  color: var(--text-secondary);
+}
+.nav-item.active {
+  background: rgba(0, 245, 255, 0.1);
+  color: var(--neon-cyan);
+}
+.nav-item.active svg {
+  color: var(--neon-cyan);
+}
+
+.nfm-sidebar__footer {
+  padding: var(--space-6);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--surface-highest);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+.user-profile .user-info {
+  display: flex;
+  flex-direction: column;
+}
+.user-profile .username {
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+.user-profile .balance {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--neon-cyan);
+}
+
+/* --- Top Bar --- */
+.nfm-topbar {
+  height: var(--topbar-height);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-8);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.nfm-topbar__left, .nfm-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.nfm-topbar__search {
+  width: 360px;
+}
+.nfm-topbar__search .nfm-search__input {
+  height: 36px;
+  background: var(--surface-container);
+}
+
+.nfm-node-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-high);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.notification-btn {
+  position: relative;
+  border: none !important;
+  background: var(--surface-high) !important;
+  border-radius: var(--radius-full);
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+.notification-btn:hover {
+  background: var(--surface-highest) !important;
+}
+.notification-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  background: var(--hyper-pink);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--hyper-pink);
+}
+
+/* Utilities */
+@media (max-width: 1024px) {
+  .nfm-sidebar {
+    display: none; /* simple responsive approach for now */
+  }
+  .hide-mobile { display: none !important; }
+}
+@media (min-width: 1025px) {
+  .hide-desktop { display: none !important; }
+}
