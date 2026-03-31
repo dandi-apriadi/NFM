@@ -333,6 +333,40 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         }).to_string()),
                     }
                 },
+                ("POST", "/api/brain/benchmark") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let requester_node_id = data["requester_node_id"].as_str().map(|s| s.to_string());
+                    let user_latitude = data["user_latitude"].as_f64().unwrap_or(-6.2088);
+                    let user_longitude = data["user_longitude"].as_f64().unwrap_or(106.8456);
+                    let critical = data["critical"].as_bool().unwrap_or(true);
+                    let class = match data["data_class"].as_str().unwrap_or("global") {
+                        "node_local" => DataClass::NodeLocal,
+                        "regional" => DataClass::Regional,
+                        _ => DataClass::Global,
+                    };
+
+                    let profile = RequestProfile {
+                        requester_node_id,
+                        user_latitude,
+                        user_longitude,
+                        data_class: class,
+                        critical,
+                    };
+
+                    let brain = state.brain_db.lock().unwrap();
+                    match brain.route_benchmark(&profile, 3) {
+                        Some(bench) => (200, "application/json", serde_json::json!({
+                            "status": "ok",
+                            "benchmark": bench
+                        }).to_string()),
+                        None => (503, "application/json", serde_json::json!({
+                            "error": "No healthy candidate node available"
+                        }).to_string()),
+                    }
+                },
                 ("POST", "/api/brain/fetch") => {
                     let mut content = String::new();
                     request.as_reader().read_to_string(&mut content).ok();
@@ -1741,6 +1775,31 @@ mod tests {
         .to_string();
 
         let (status, response_body) = send_post(port, "/api/brain/route", &body, &[]);
+
+        assert_eq!(status, 503);
+        assert!(response_body.contains("No healthy candidate node"));
+    }
+
+    #[test]
+    fn test_brain_benchmark_returns_503_when_no_healthy_nodes() {
+        let secret = "test_secret_brain_benchmark";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "requester_node_id": "id-jkt-a",
+            "user_latitude": -6.2,
+            "user_longitude": 106.8,
+            "data_class": "global",
+            "critical": true
+        })
+        .to_string();
+
+        let (status, response_body) = send_post(port, "/api/brain/benchmark", &body, &[]);
 
         assert_eq!(status, 503);
         assert!(response_body.contains("No healthy candidate node"));

@@ -45,6 +45,22 @@ pub struct RequestProfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CandidateScore {
+    pub node_id: String,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteBenchmark {
+    pub selected_node: String,
+    pub selected_score: f64,
+    pub fallback_node: Option<String>,
+    pub fallback_score: Option<f64>,
+    pub projected_score_gain: f64,
+    pub top_candidates: Vec<CandidateScore>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutedRecord {
     pub key: String,
     pub value: serde_json::Value,
@@ -208,6 +224,46 @@ impl GeoDistributedBrainDb {
             .take(count.max(1))
             .map(|(n, _)| n.node_id.clone())
             .collect()
+    }
+
+    pub fn route_benchmark(&self, profile: &RequestProfile, count: usize) -> Option<RouteBenchmark> {
+        let mut scored: Vec<(&NodeMeta, f64)> = self
+            .nodes
+            .values()
+            .filter(|n| n.healthy)
+            .filter(|n| self.filter_by_class(profile, n))
+            .map(|n| (n, self.node_score(profile, n)))
+            .collect();
+
+        if scored.is_empty() {
+            return None;
+        }
+
+        scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let selected_node = scored[0].0.node_id.clone();
+        let selected_score = scored[0].1;
+        let fallback_node = scored.get(1).map(|(n, _)| n.node_id.clone());
+        let fallback_score = scored.get(1).map(|(_, s)| *s);
+        let projected_score_gain = fallback_score.map(|s| s - selected_score).unwrap_or(0.0);
+
+        let top_candidates = scored
+            .iter()
+            .take(count.max(1))
+            .map(|(n, s)| CandidateScore {
+                node_id: n.node_id.clone(),
+                score: *s,
+            })
+            .collect();
+
+        Some(RouteBenchmark {
+            selected_node,
+            selected_score,
+            fallback_node,
+            fallback_score,
+            projected_score_gain,
+            top_candidates,
+        })
     }
 
     fn node_score(&self, profile: &RequestProfile, node: &NodeMeta) -> f64 {
@@ -408,5 +464,26 @@ mod tests {
         let candidates = db.hedged_candidates(&profile, 2);
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0], "id-jkt-a");
+    }
+
+    #[test]
+    fn benchmark_exposes_selected_and_fallback_scores() {
+        let db = setup_db();
+        let profile = RequestProfile {
+            requester_node_id: Some("id-jkt-a".to_string()),
+            user_latitude: -6.2,
+            user_longitude: 106.8,
+            data_class: DataClass::Global,
+            critical: true,
+        };
+
+        let bench = db
+            .route_benchmark(&profile, 3)
+            .expect("benchmark should produce candidates");
+
+        assert_eq!(bench.selected_node, "id-jkt-a");
+        assert!(bench.fallback_node.is_some());
+        assert!(bench.projected_score_gain >= 0.0);
+        assert_eq!(bench.top_candidates.len(), 3);
     }
 }
