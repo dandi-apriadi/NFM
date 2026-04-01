@@ -1,15 +1,53 @@
 import { AlignLeft, CheckCircle2, XCircle, Clock, ArrowRight, Vote, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
-import { appCreateProposal, appVoteProposal } from '../api/client';
+import { appCreateProposal, appGovernanceIndicators, appVoteProposal } from '../api/client';
 
 const Governance = () => {
   const navigate = useNavigate();
   const { data, refresh, requestPrompt, notifySuccess, notifyError } = useAppData();
   const DUMMY_PROPOSALS = data.proposals;
   const DUMMY_USER = data.user_profile;
+  const [indicators, setIndicators] = useState<{
+    quorum_target: number;
+    active_proposals: number;
+    total_for: number;
+    total_against: number;
+    quorum_progress: number;
+    veto_risk_count: number;
+    treasury_pool: number;
+  } | null>(null);
   const reputation = Number(DUMMY_USER.reputation ?? 0);
   const canVote = reputation > 0;
+
+  useEffect(() => {
+    const loadIndicators = async () => {
+      try {
+        const res = await appGovernanceIndicators() as {
+          quorum_target?: number;
+          active_proposals?: number;
+          total_for?: number;
+          total_against?: number;
+          quorum_progress?: number;
+          veto_risk_count?: number;
+          treasury_pool?: number;
+        };
+        setIndicators({
+          quorum_target: Number(res.quorum_target ?? 0),
+          active_proposals: Number(res.active_proposals ?? 0),
+          total_for: Number(res.total_for ?? 0),
+          total_against: Number(res.total_against ?? 0),
+          quorum_progress: Number(res.quorum_progress ?? 0),
+          veto_risk_count: Number(res.veto_risk_count ?? 0),
+          treasury_pool: Number(res.treasury_pool ?? 0),
+        });
+      } catch {
+        setIndicators(null);
+      }
+    };
+    void loadIndicators();
+  }, [DUMMY_PROPOSALS.length]);
 
   const handleCreateProposal = async () => {
     const title = await requestPrompt({
@@ -98,6 +136,13 @@ const Governance = () => {
             <div className="font-mono text-cyan font-bold">{Math.floor(reputation).toLocaleString()} REP</div>
             {!canVote && <div className="text-[10px] text-muted mt-1">Need reputation &gt; 0 to vote</div>}
           </div>
+          {indicators && (
+            <div className="text-right hide-mobile">
+              <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Quorum Progress</div>
+              <div className="font-mono text-purple font-bold">{(indicators.quorum_progress * 100).toFixed(1)}%</div>
+              <div className="text-[10px] text-muted mt-1">{indicators.active_proposals} active proposal(s)</div>
+            </div>
+          )}
           <button className="nfm-btn nfm-btn--primary" onClick={handleCreateProposal}>
             <Plus size={16} /> Create Proposal
           </button>
@@ -195,10 +240,10 @@ const Governance = () => {
 
           <div className="nfm-treasury-card">
              <div className="text-[10px] text-cyan font-bold uppercase tracking-[0.2em] mb-4">DAO Treasury Pool</div>
-             <div className="font-display text-5xl font-bold text-primary mb-2">12.5M</div>
+             <div className="font-display text-5xl font-bold text-primary mb-2">{((indicators?.treasury_pool ?? 0) / 1_000_000).toFixed(2)}M</div>
              <div className="text-xs font-mono text-muted uppercase tracking-widest mb-8">NVC Contained</div>
              <button className="nfm-btn nfm-btn--primary nfm-btn--sm w-full" onClick={() => navigate('/wallet')}>View Allocation</button>
-             <div className="mt-4 text-[10px] text-muted italic">Managed by Neural Vault Protocol Smart Contract</div>
+             <div className="mt-4 text-[10px] text-muted italic">Veto risks: {indicators?.veto_risk_count ?? 0} | Quorum target: {(indicators?.quorum_target ?? 0).toLocaleString()} VP</div>
           </div>
 
         </div>

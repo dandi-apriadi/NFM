@@ -1,0 +1,18 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "NFM: Pre-Release Policy Gate",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"scripts/pre_release_policy_gate.ps1"
+			],
+			"isBackground": false,
+			"group": "test"
+		}
+	]
+}

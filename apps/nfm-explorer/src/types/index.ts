@@ -6,6 +6,9 @@ export interface NFMStatus {
   status: 'ONLINE' | 'SYNCING' | 'OFFLINE';
   blocks: number;
   total_burned: number;
+  reward_pool: number;
+  circulating_supply: number;
+  total_supply: number;
   peers: number;
 }
 
@@ -15,6 +18,7 @@ export interface Block {
   previous_hash: string;
   timestamp: number;
   transactions: number;
+  tx_hashes?: string[];
   size: string;
   miner: string;
   rewards: number;
@@ -83,4 +87,42 @@ export interface P2PStatus {
   last_sync_unix: number;
   chain_blocks: number;
   status: string;
+}
+
+export interface AuctionItem {
+  id: string;
+  auction_id: number;
+  title: string;
+  seller: string;
+  price: number;
+  starting_price: number;
+  highest_bid: number;
+  highest_bidder: string;
+  rarity: 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';
+  power_multiplier: number;
+  status: 'ACTIVE' | 'SOLD' | 'CANCELLED';
+  end_time: number;
+}
+
+export interface AuctionBidRequest {
+  auction_id: number;
+  bidder: string;
+  bid_amount: number;
+}
+
+export interface AuctionSettleRequest {
+  auction_id: number;
+}
+
+export interface AuctionCancelRequest {
+  auction_id: number;
+  requester: string;
+}
+
+export interface UserIdentity {
+  address: string;
+  reputation_score: number;
+  elite_shield: boolean;
+  elite_items: string[];
+  status: 'VERIFIED' | 'ELITE_VERIFIED';
 }

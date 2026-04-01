@@ -465,6 +465,14 @@ impl P2PNode {
             },
             Err(e) => {
                 println!("[P2P] Failed to bind {}: {}", bind_addr, e);
+                let lower = e.to_string().to_lowercase();
+                if lower.contains("address already in use")
+                    || lower.contains("only one usage of each socket address")
+                    || lower.contains("os error 10048")
+                {
+                    println!("[P2P][HINT] Port {} is already in use. Another node instance may still be running.", self.port);
+                    println!("[P2P][HINT] Stop the existing process or restart via node-runner script with --restart.");
+                }
                 return;
             }
         };

@@ -1,23 +1,70 @@
 import { HardDrive, Upload, Folder, File, Shield, Database, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
+import { appDriveDownload, appDriveUpload } from '../api/client';
 
 const Drive = () => {
   const navigate = useNavigate();
-  const { data, notifyError } = useAppData();
+  const { data, notifyError, notifySuccess, requestPrompt, refresh } = useAppData();
   const DUMMY_DRIVE_FILES = data.drive_files;
   const totalFragments = DUMMY_DRIVE_FILES.reduce((sum, file) => sum + file.fragments, 0);
   const averageHealth = DUMMY_DRIVE_FILES.length > 0
     ? Math.round(DUMMY_DRIVE_FILES.reduce((sum, file) => sum + file.health, 0) / DUMMY_DRIVE_FILES.length)
     : 0;
 
-  const handleUpload = () => {
-    notifyError('Upload endpoint belum tersedia di backend');
+  const handleUpload = async () => {
+    const name = await requestPrompt({
+      title: 'Upload File',
+      message: 'Enter file name',
+      placeholder: 'my-notes.txt',
+      confirmText: 'Upload',
+    });
+
+    if (!name || !name.trim()) {
+      return;
+    }
+
+    const content = await requestPrompt({
+      title: 'File Content',
+      message: 'Paste short file content (indexed as preview)',
+      placeholder: 'Type content here...',
+      confirmText: 'Submit',
+    });
+
+    if (content === null) {
+      return;
+    }
+
+    try {
+      await appDriveUpload(name.trim(), content, data.user_profile.nfmAddress);
+      await refresh();
+      notifySuccess('Drive file uploaded');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      notifyError(message);
+    }
   };
 
   const handleViewAllVaultFiles = () => {
     sessionStorage.setItem('nfm_explorer_query', '/root/my-vault');
     navigate('/explorer');
+  };
+
+  const handleDownload = async (fileId: string, fileName: string) => {
+    try {
+      const result = await appDriveDownload(fileId, data.user_profile.nfmAddress) as { content?: string; file?: { content_preview?: string } };
+      const content = result.content || result.file?.content_preview || '';
+
+      if (content && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content);
+        notifySuccess(`Downloaded ${fileName}. Content copied to clipboard.`);
+      } else {
+        notifySuccess(`Downloaded ${fileName}.`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Download failed';
+      notifyError(message);
+    }
   };
 
   return (
@@ -89,6 +136,7 @@ const Drive = () => {
                 <th>Health</th>
                 <th>Fragments</th>
                 <th>Uploaded</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -108,6 +156,14 @@ const Drive = () => {
                   </td>
                   <td className="font-mono text-xs">{file.fragments}</td>
                   <td className="text-muted text-xs">{Math.floor((Date.now() - file.uploadedAt) / 3600000)}h ago</td>
+                  <td>
+                    <button
+                      className="nfm-btn nfm-btn--ghost nfm-btn--sm"
+                      onClick={() => void handleDownload(file.id, file.name)}
+                    >
+                      Download
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

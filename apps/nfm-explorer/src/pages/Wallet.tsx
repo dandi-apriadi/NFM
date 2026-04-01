@@ -1,11 +1,15 @@
-import { ArrowUpRight, ArrowDownLeft, History, ArrowRight } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, History, ArrowRight, Plus, Copy, Check, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
-import { appTransfer } from '../api/client';
+import { appTransfer, appCreateWallet } from '../api/client';
+import { useState } from 'react';
 
 const Wallet = () => {
   const navigate = useNavigate();
   const { data, refresh, requestPrompt, notifySuccess, notifyError } = useAppData();
+  const [newWallet, setNewWallet] = useState<{ address: string; private_key: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  
   const DUMMY_USER = data.user_profile;
   const DUMMY_TRANSACTIONS = data.transactions;
 
@@ -55,13 +59,47 @@ const Wallet = () => {
     }
   };
 
+  const handleCreateWallet = async () => {
+    try {
+      const res = await appCreateWallet();
+      setNewWallet({
+        address: res.address,
+        private_key: res.private_key,
+      });
+      await refresh();
+      notifySuccess('New wallet created and registered');
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Failed to create wallet');
+    }
+  };
+
+  const handleCopyPrivateKey = async () => {
+    if (!newWallet) return;
+    try {
+      await navigator.clipboard.writeText(newWallet.private_key);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      notifySuccess('Private key copied to clipboard');
+    } catch {
+      notifyError('Failed to copy to clipboard');
+    }
+  };
+
   return (
     <div className="animate-in">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-purple">Wallet Management</h1>
-        <div className="nfm-badge nfm-badge--cyan">
-          <div className="nfm-badge__dot"></div>
-          <span className="hide-mobile">Connected:</span> {DUMMY_USER.nfmAddress.substring(0, 10)}...
+      <div className="flex items-center justify-between mb-8 gap-4 wrap">
+        <div>
+          <h1 className="text-purple">Wallet Management</h1>
+          <p className="text-xs text-muted mt-1">Manage core NFM identity and asset transfers.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="nfm-btn nfm-btn--secondary" style={{ height: '38px', padding: '0 16px' }} onClick={handleCreateWallet}>
+            <Plus size={16} /> Create New Wallet
+          </button>
+          <div className="nfm-badge nfm-badge--cyan">
+            <div className="nfm-badge__dot"></div>
+            <span className="hide-mobile">Connected:</span> {DUMMY_USER.nfmAddress.substring(0, 10)}...
+          </div>
         </div>
       </div>
 
@@ -158,6 +196,58 @@ const Wallet = () => {
           <ArrowRight size={14} /> Full Transaction Ledger
         </button>
       </div>
+
+      {newWallet && (
+        <div className="nfm-modal-overlay" onClick={() => setNewWallet(null)}>
+          <div className="nfm-modal animate-in" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="nfm-modal__header">
+              <h3 className="nfm-modal__title text-cyan flex items-center gap-2">
+                <Plus size={20} /> New Identity Generated
+              </h3>
+              <button className="nfm-modal-close" onClick={() => setNewWallet(null)}>
+                <X size={18} />
+              </button>
+            </div>
+            
+            <div className="flex-col gap-6 p-2">
+              <div className="nfm-alert nfm-alert--warning" style={{ background: 'rgba(245, 158, 11, 0.08)', borderColor: 'rgba(245, 158, 11, 0.2)' }}>
+                <p className="text-xs" style={{ color: 'var(--warning)' }}>
+                  <strong>CRITICAL:</strong> Save your Private Key now. It will not be shown again and cannot be recovered if lost.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-10px uppercase tracking-widest text-muted block mb-2">Public Address</label>
+                <div className="flex items-center gap-2 nfm-input-group">
+                  <input className="nfm-input font-mono text-xs" value={newWallet.address} readOnly />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-10px uppercase tracking-widest text-muted block mb-2">Private Key (Ed25519 Hex)</label>
+                <div className="flex items-center gap-2 nfm-input-group">
+                  <input 
+                    type="password" 
+                    className="nfm-input font-mono text-xs" 
+                    value={newWallet.private_key} 
+                    readOnly 
+                    style={{ letterSpacing: '0.1em' }}
+                  />
+                  <button className="nfm-btn nfm-btn--ghost" onClick={handleCopyPrivateKey} style={{ width: '40px', padding: 0 }}>
+                    {copied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-white/5 flex justify-end">
+                <button className="nfm-btn nfm-btn--primary" onClick={() => setNewWallet(null)}>
+                  I have saved my keys
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

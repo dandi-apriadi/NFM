@@ -15,26 +15,62 @@ function Invoke-JsonRequest {
     $uri = "$BaseUrl$Path"
     $jsonBody = if ($null -ne $Body) { $Body | ConvertTo-Json -Depth 8 } else { $null }
 
-    $response = Invoke-WebRequest `
-        -Uri $uri `
-        -Method $Method `
-        -ContentType "application/json" `
-        -Body $jsonBody `
-        -SkipHttpErrorCheck
+    try {
+        $response = Invoke-WebRequest `
+            -Uri $uri `
+            -Method $Method `
+            -ContentType "application/json" `
+            -Body $jsonBody `
+            -UseBasicParsing
+
+        $statusCode = [int]$response.StatusCode
+        $rawContent = [string]$response.Content
+    }
+    catch {
+        $webResponse = $_.Exception.Response
+        if ($null -eq $webResponse) {
+            throw
+        }
+
+        $statusCode = [int]$webResponse.StatusCode
+        $rawContent = ""
+
+        $hasGetResponseStream = $null -ne ($webResponse.PSObject.Methods | Where-Object { $_.Name -eq "GetResponseStream" })
+        if ($hasGetResponseStream) {
+            $stream = $webResponse.GetResponseStream()
+            if ($null -ne $stream) {
+                $reader = New-Object System.IO.StreamReader($stream)
+                $rawContent = $reader.ReadToEnd()
+                $reader.Close()
+            }
+        }
+        elseif ($null -ne $webResponse.Content) {
+            try {
+                $rawContent = [string]$webResponse.Content.ReadAsStringAsync().Result
+            }
+            catch {
+                $rawContent = ""
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace($rawContent) -and $null -ne $_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace($_.ErrorDetails.Message)) {
+            $rawContent = [string]$_.ErrorDetails.Message
+        }
+    }
 
     $payload = $null
-    if (-not [string]::IsNullOrWhiteSpace($response.Content)) {
+    if (-not [string]::IsNullOrWhiteSpace($rawContent)) {
         try {
-            $payload = $response.Content | ConvertFrom-Json
+            $payload = $rawContent | ConvertFrom-Json
         } catch {
-            $payload = $response.Content
+            $payload = $rawContent
         }
     }
 
     return [PSCustomObject]@{
-        StatusCode = [int]$response.StatusCode
+        StatusCode = $statusCode
         Payload    = $payload
-        Raw        = $response.Content
+        Raw        = $rawContent
         Path       = $Path
     }
 }

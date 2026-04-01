@@ -1,4 +1,7 @@
+use crate::auction::{Auction, AuctionStatus, EscrowVault};
 use crate::block::{Block, BlockData};
+use crate::item::{Item, Rarity};
+use crate::reward::EconomyPool;
 use nfm_ai_engine::distributed_brain::{
     DataClass, GeoDistributedBrainDb, NodeMeta, RequestProfile, RouterWeights,
 };
@@ -103,6 +106,13 @@ fn apply_universal_gas_fee(state: &ApiState, address: &str) -> Result<f64, Strin
     // Alirkan ke Economy Pool (Pajak AI)
     let mut fees = state.total_fees.lock().unwrap();
     *fees += fee;
+
+    // --- BURN MECHANISM [PHASE 11.2] ---
+    // 5% dari setiap Gas Fee dibakar secara permanen dari sirkulasi
+    let burn_amount = fee * 0.05;
+    let mut burned = state.total_burned.lock().unwrap();
+    *burned += burn_amount;
+
     
     // Catat transaksi untuk menaikkan kesibukan (Dynamic Fee)
     gas_calc.record_tx();
@@ -138,6 +148,106 @@ fn parse_prefixed_id(raw: &str, prefix: &str) -> Option<u32> {
     raw.parse::<u32>().ok()
 }
 
+fn parse_rarity(raw: &str) -> Rarity {
+    match raw.trim().to_ascii_uppercase().as_str() {
+        "RARE" => Rarity::Rare,
+        "EPIC" => Rarity::Epic,
+        "LEGENDARY" => Rarity::Legendary,
+        "MYTHIC" => Rarity::Mythic,
+        _ => Rarity::Common,
+    }
+}
+
+fn default_user_settings() -> serde_json::Value {
+    serde_json::json!({
+        "rpc": "http://127.0.0.1:3000",
+        "theme": "mesh",
+        "notifications": {
+            "rewards": true,
+            "network": true,
+            "security": true
+        }
+    })
+}
+
+fn sanitize_user_settings(candidate: &serde_json::Value) -> serde_json::Value {
+    let mut current = default_user_settings();
+
+    if let Some(rpc) = candidate.get("rpc").and_then(|v| v.as_str()) {
+        current["rpc"] = serde_json::Value::String(rpc.to_string());
+    }
+
+    if let Some(theme) = candidate.get("theme").and_then(|v| v.as_str()) {
+        let normalized = match theme {
+            "dark" | "light" | "mesh" => theme,
+            _ => "mesh",
+        };
+        current["theme"] = serde_json::Value::String(normalized.to_string());
+    }
+
+    if let Some(notifications) = candidate.get("notifications").and_then(|v| v.as_object()) {
+        for key in ["rewards", "network", "security"] {
+            if let Some(flag) = notifications.get(key).and_then(|v| v.as_bool()) {
+                current["notifications"][key] = serde_json::Value::Bool(flag);
+            }
+        }
+    }
+
+    current
+}
+
+fn build_drive_files_payload(state: &ApiState) -> Vec<serde_json::Value> {
+    let brain = state.brain_db.lock().unwrap();
+    let snapshot = brain.export_snapshot();
+    let now_ms = chrono::Utc::now().timestamp_millis();
+
+    snapshot
+        .records
+        .values()
+        .take(100)
+        .enumerate()
+        .map(|(idx, rec)| {
+            let value = rec.value.as_object();
+            let name = value
+                .and_then(|v| v.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(&rec.key);
+            let file_type = value
+                .and_then(|v| v.get("type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("FRAGMENT");
+            let fragments = value
+                .and_then(|v| v.get("fragments"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1);
+            let health = value
+                .and_then(|v| v.get("health"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(100);
+            let uploaded_at = value
+                .and_then(|v| v.get("uploadedAt"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(now_ms - ((idx as i64) * 60_000));
+
+            let size = value
+                .and_then(|v| v.get("size"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{} B", rec.value.to_string().len()));
+
+            serde_json::json!({
+                "id": rec.key,
+                "name": name,
+                "size": size,
+                "type": file_type,
+                "fragments": fragments,
+                "health": health,
+                "uploadedAt": uploaded_at
+            })
+        })
+        .collect()
+}
+
 fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
     let chain = state.chain.lock().unwrap();
     let wallets = state.wallets.lock().unwrap();
@@ -146,6 +256,7 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
     let governance = state.governance_engine.lock().unwrap();
     let admin = state.admin_engine.lock().unwrap();
     let aliases = state.aliases.lock().unwrap();
+    let auctions = state.auctions.lock().unwrap();
     let brain = state.brain_db.lock().unwrap();
     let total_burned = *state.total_burned.lock().unwrap();
 
@@ -167,12 +278,30 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
                 .and_then(|p| p.rewards.first().map(|r| r.address.clone()))
                 .unwrap_or_else(|| "nfm_validator_unknown".to_string());
 
+            let tx_hashes: Vec<String> = parsed
+                .as_ref()
+                .map(|p| {
+                    p.transactions
+                        .iter()
+                        .map(|tx_str| {
+                            if tx_str.starts_with("GENESIS") {
+                                return tx_str.clone();
+                            }
+                            let mut hasher = Sha256::new();
+                            hasher.update(tx_str.as_bytes());
+                            hex::encode(hasher.finalize())
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
             serde_json::json!({
                 "index": b.index,
                 "hash": b.hash,
                 "previous_hash": b.previous_hash,
                 "timestamp": b.timestamp.saturating_mul(1000),
                 "transactions": tx_count,
+                "tx_hashes": tx_hashes,
                 "size": format_bytes(b.data.len()),
                 "miner": miner,
                 "rewards": rewards
@@ -180,22 +309,71 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         })
         .collect();
 
-    let pending_transactions: Vec<serde_json::Value> = mempool
-        .iter()
-        .enumerate()
-        .map(|(idx, raw)| {
-            let parsed: serde_json::Value = serde_json::from_str(raw).unwrap_or_default();
-            let from = parsed["address"].as_str().unwrap_or("nfm_unknown");
-            let to = parsed["target"].as_str().unwrap_or("nfm_unknown");
-            let amount = parsed["amount"].as_f64().unwrap_or(0.0);
-            let tx_type = match parsed["type"].as_str().unwrap_or("TRANSFER") {
+    // --- TRANSACTION HISTORY [CONFIRMED + MEMPOOL] ---
+    let mut all_transactions: Vec<serde_json::Value> = Vec::new();
+
+    // 1. Ambil dari blocks (Confirmed) - Ambil 30 terakhir
+    for b in chain.iter().rev().take(10) {
+        if let Ok(parsed) = serde_json::from_str::<BlockData>(&b.data) {
+            for tx_str in parsed.transactions {
+                let txid = if tx_str.starts_with("GENESIS") {
+                    tx_str.clone()
+                } else {
+                    let mut hasher = Sha256::new();
+                    hasher.update(tx_str.as_bytes());
+                    hex::encode(hasher.finalize())
+                };
+
+                if let Ok(parsed_tx) = serde_json::from_str::<serde_json::Value>(&tx_str) {
+                    let from = parsed_tx["address"].as_str().unwrap_or("nfm_protocol");
+                    let to = parsed_tx["target"].as_str().unwrap_or("nfm_reward");
+                    let amount = parsed_tx["amount"].as_f64().unwrap_or(0.0);
+                    let tx_type = match parsed_tx["type"].as_str().unwrap_or("TRANSFER") {
+                        "BURN" => "BURN",
+                        "STAKE" | "UNSTAKE" => "SMART_CONTRACT",
+                        _ => "TRANSFER",
+                    };
+
+                    all_transactions.push(serde_json::json!({
+                        "txid": txid,
+                        "type": tx_type,
+                        "from": from,
+                        "to": to,
+                        "amount": amount,
+                        "timestamp": b.timestamp * 1000,
+                        "fee": 0.0, // Fee sudah masuk Reward Pool
+                        "status": "CONFIRMED"
+                    }));
+                } else if tx_str.starts_with("GENESIS") {
+                     all_transactions.push(serde_json::json!({
+                        "txid": tx_str,
+                        "type": "NODE_REWARD",
+                        "from": "nfm_genesis",
+                        "to": "nfm_founder",
+                        "amount": 100.0,
+                        "timestamp": b.timestamp * 1000,
+                        "fee": 0.0,
+                        "status": "CONFIRMED"
+                    }));
+                }
+            }
+        }
+    }
+
+    // 2. Ambil dari mempool (Pending)
+    for (idx, raw) in mempool.iter().enumerate() {
+        if let Ok(parsed_tx) = serde_json::from_str::<serde_json::Value>(raw) {
+            let from = parsed_tx["address"].as_str().unwrap_or("nfm_unknown");
+            let to = parsed_tx["target"].as_str().unwrap_or("nfm_unknown");
+            let amount = parsed_tx["amount"].as_f64().unwrap_or(0.0);
+            let tx_type = match parsed_tx["type"].as_str().unwrap_or("TRANSFER") {
                 "BURN" => "BURN",
                 "STAKE" | "UNSTAKE" => "SMART_CONTRACT",
                 _ => "TRANSFER",
             };
 
-            serde_json::json!({
-                "txid": format!("pending-{}-{}", idx + 1, now_ms),
+            all_transactions.push(serde_json::json!({
+                "txid": format!("pending_{}_{}", now_ms, idx),
                 "type": tx_type,
                 "from": from,
                 "to": to,
@@ -203,9 +381,9 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
                 "timestamp": now_ms,
                 "fee": 0.0,
                 "status": "PENDING"
-            })
-        })
-        .collect();
+            }));
+        }
+    }
 
     let completed = missions
         .completed_missions
@@ -271,6 +449,13 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         .first()
         .map(|b| b.timestamp.saturating_mul(1000))
         .unwrap_or(now_ms);
+    let user_settings = state
+        .user_settings
+        .lock()
+        .unwrap()
+        .get(&state.node_address)
+        .cloned()
+        .unwrap_or_else(default_user_settings);
 
     let api_docs = vec![
         serde_json::json!({ "method": "GET", "path": "/api/status", "description": "Core node status and tokenomics", "authRequired": false }),
@@ -288,7 +473,20 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         serde_json::json!({ "method": "GET", "path": "/api/mempool", "description": "Pending intents", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/transfer/create", "description": "Queue a transfer intent", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/transfer/secure", "description": "Signed transfer", "authRequired": true }),
+        serde_json::json!({ "method": "GET", "path": "/api/app/settings", "description": "Read UI settings for active node", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/app/settings", "description": "Update UI settings for active node", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/drive/files", "description": "List indexed drive files", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/drive/upload", "description": "Upload a drive file into SDS index", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/drive/download", "description": "Download a drive file by id", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/auction/list", "description": "List active and historical auctions", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/auction/create", "description": "Create a new auction listing", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/auction/bid", "description": "Place an escrow-backed bid", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/auction/settle", "description": "Settle auction and distribute payout", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/auction/cancel", "description": "Cancel auction and refund escrow", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/governance/indicators", "description": "Governance quorum, treasury, and veto risk indicators", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/kg/semantic", "description": "Semantic knowledge graph view with typed concepts", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/brain/status", "description": "Distributed brain health", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/identity/{address}", "description": "Get user identity and elite shield status", "authRequired": false }),
     ];
 
     let proposals: Vec<serde_json::Value> = governance
@@ -408,6 +606,43 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         }))
         .collect();
 
+    let market_items: Vec<serde_json::Value> = auctions
+        .values()
+        .take(40)
+        .map(|a| {
+            let rarity = match a.item.rarity {
+                Rarity::Common => "COMMON",
+                Rarity::Rare => "RARE",
+                Rarity::Epic => "EPIC",
+                Rarity::Legendary => "LEGENDARY",
+                Rarity::Mythic => "MYTHIC",
+            };
+            let status = match a.status {
+                AuctionStatus::Active => "ACTIVE",
+                AuctionStatus::Settled => "SOLD",
+                AuctionStatus::Cancelled => "CANCELLED",
+            };
+            serde_json::json!({
+                "id": format!("a-{}", a.auction_id),
+                "auction_id": a.auction_id,
+                "title": a.item.name,
+                "seller": a.seller,
+                "price": if a.highest_bid > 0.0 { a.highest_bid } else { a.starting_price },
+                "starting_price": a.starting_price,
+                "highest_bid": a.highest_bid,
+                "highest_bidder": a.highest_bidder,
+                "rarity": rarity,
+                "power_multiplier": a.item.power_multiplier,
+                "status": status,
+                "end_time": a.end_time.timestamp_millis(),
+            })
+        })
+        .collect();
+
+    let circulating_supply: f64 = wallets.balances.values().sum();
+    let total_supply: f64 = 100_000_000.0;
+    let reward_pool = *state.reward_pool.lock().unwrap();
+
     serde_json::json!({
         "status": {
             "node": state.node_address,
@@ -415,10 +650,13 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
             "status": "ONLINE",
             "blocks": chain.len(),
             "total_burned": total_burned,
+            "reward_pool": reward_pool,
+            "circulating_supply": circulating_supply,
+            "total_supply": total_supply,
             "peers": brain.node_count()
         },
         "blocks": blocks,
-        "transactions": pending_transactions,
+        "transactions": all_transactions,
         "user_profile": {
             "username": user_alias,
             "nfmAddress": state.node_address,
@@ -426,15 +664,7 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
             "reputation": governance.get_reputation(&state.node_address),
             "joinedAt": joined_at_ms,
             "feedbackCount": completed.len(),
-            "settings": {
-                "rpc": "http://127.0.0.1:3000",
-                "theme": "mesh",
-                "notifications": {
-                    "rewards": true,
-                    "network": true,
-                    "security": true
-                }
-            }
+            "settings": user_settings
         },
         "wallets": wallets_list,
         "node_stats": {
@@ -446,7 +676,7 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         "ai_tasks": ai_tasks,
         "drive_files": drive_files,
         "kg_concepts": kg_concepts,
-        "market_items": [],
+        "market_items": market_items,
         "quests": quests,
         "box_history": box_history,
         "reward_catalog": reward_catalog,
@@ -462,6 +692,7 @@ pub struct ApiState {
     pub node_address: String,
     pub total_fees: Arc<Mutex<f64>>,
     pub total_burned: Arc<Mutex<f64>>,
+    pub reward_pool: Arc<Mutex<f64>>,
     pub active_effects: Arc<Mutex<std::collections::HashMap<String, Vec<crate::contract::ActiveEffect>>>>,
     pub mission_engine: Arc<Mutex<crate::mission::MissionEngine>>,
     pub staking_pool: Arc<Mutex<std::collections::HashMap<String, crate::contract::StakingInfo>>>,
@@ -477,6 +708,8 @@ pub struct ApiState {
     pub mempool: Arc<Mutex<Vec<String>>>,
     /// Jadwal pasti kapan epoch berikutnya akan dieksekusi oleh backend (UTC Unix Seconds)
     pub next_block_timestamp: Arc<Mutex<u64>>,
+    /// Preferensi UI per alamat untuk sinkronisasi app settings
+    pub user_settings: Arc<Mutex<std::collections::HashMap<String, serde_json::Value>>>,
     /// Distributed brain data router (geo + latency + load aware)
     pub brain_db: Arc<Mutex<GeoDistributedBrainDb>>,
     /// Whitelisted bearer tokens untuk public /api/brain/* endpoints
@@ -489,6 +722,12 @@ pub struct ApiState {
     pub p2p_seed_peers: Arc<Mutex<Vec<String>>>,
     /// Daftar endpoint peer yang di-ban oleh operator runtime
     pub p2p_ban_peers: Arc<Mutex<Vec<String>>>,
+    /// Buku auction aktif dan historis
+    pub auctions: Arc<Mutex<std::collections::HashMap<u32, Auction>>>,
+    /// Vault escrow untuk lock dana bidding
+    pub auction_escrow: Arc<Mutex<EscrowVault>>,
+    /// Incremental id generator untuk auction baru
+    pub next_auction_id: Arc<Mutex<u32>>,
     /// Penyimpanan snapshot brain di sled untuk persistensi antar restart
     pub brain_snapshot_store: Arc<Mutex<Option<sled::Db>>>,
 }
@@ -506,6 +745,14 @@ pub fn start_api_server(state: ApiState, port: u16) {
             },
             Err(e) => {
                 println!("[API] Failed to start: {}", e);
+                let lower = e.to_string().to_lowercase();
+                if lower.contains("address already in use")
+                    || lower.contains("only one usage of each socket address")
+                    || lower.contains("os error 10048")
+                {
+                    println!("[API][HINT] Port {} is already in use. Another node instance may already be serving the dashboard.", port);
+                    println!("[API][HINT] Stop the existing process or restart via node-runner script with --restart.");
+                }
                 return;
             }
         };
@@ -986,9 +1233,472 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         "action": "sync"
                     }).to_string())
                 },
+                ("POST", "/api/app/wallet/create") => {
+                    use crate::wallet::CryptoWallet;
+                    let wallet = CryptoWallet::generate();
+                    let mut wallets = state.wallets.lock().unwrap();
+                    wallets.set_balance(&wallet.address, 0.0);
+                    
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "address": wallet.address,
+                        "private_key": wallet.export_private_key_hex(),
+                        "public_key": hex::encode(wallet.verifying_key.as_bytes())
+                    }).to_string())
+                },
                 ("GET", "/api/app/state") => {
                     let payload = build_frontend_app_state(&state);
                     (200, "application/json", payload.to_string())
+                },
+                ("GET", "/api/governance/indicators") => {
+                    let governance = state.governance_engine.lock().unwrap();
+                    let reward_pool = *state.reward_pool.lock().unwrap();
+                    let total_fees = *state.total_fees.lock().unwrap();
+
+                    let quorum_target: u64 = 10_000_000;
+                    let active: Vec<&crate::governance::Proposal> = governance
+                        .proposals
+                        .iter()
+                        .filter(|p| p.is_active)
+                        .collect();
+                    let active_count = active.len();
+                    let total_for: u64 = active.iter().map(|p| p.votes_for).sum();
+                    let total_against: u64 = active.iter().map(|p| p.votes_against).sum();
+                    let total_votes = total_for.saturating_add(total_against);
+                    let quorum_progress = if quorum_target == 0 {
+                        0.0
+                    } else {
+                        ((total_votes as f64) / (quorum_target as f64)).clamp(0.0, 1.0)
+                    };
+                    let veto_risk_count = active
+                        .iter()
+                        .filter(|p| p.votes_against > p.votes_for)
+                        .count();
+
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "quorum_target": quorum_target,
+                        "active_proposals": active_count,
+                        "total_for": total_for,
+                        "total_against": total_against,
+                        "quorum_progress": quorum_progress,
+                        "veto_risk_count": veto_risk_count,
+                        "treasury_pool": reward_pool,
+                        "lifetime_fees": total_fees,
+                        "registered_reputation_nodes": governance.reputations.len()
+                    }).to_string())
+                },
+                ("GET", "/api/kg/semantic") => {
+                    let brain = state.brain_db.lock().unwrap();
+                    let snapshot = brain.export_snapshot();
+                    let records = snapshot.records;
+
+                    let concepts: Vec<serde_json::Value> = records
+                        .iter()
+                        .take(64)
+                        .map(|(key, rec)| {
+                            let value = rec.value.as_object();
+                            let category = if key.contains("wallet") {
+                                "ENTITY"
+                            } else if key.contains("mission") || key.contains("proposal") {
+                                "CODE"
+                            } else {
+                                "DOCUMENT"
+                            };
+
+                            let relation_count = value
+                                .and_then(|v| v.get("relations"))
+                                .and_then(|v| v.as_array())
+                                .map(|a| a.len())
+                                .unwrap_or_else(|| rec.value.to_string().len().min(256));
+
+                            serde_json::json!({
+                                "id": key,
+                                "name": key,
+                                "category": category,
+                                "connections": relation_count,
+                                "class": format!("{:?}", rec.class),
+                            })
+                        })
+                        .collect();
+
+                    let mut category_counts = std::collections::HashMap::<String, u64>::new();
+                    for c in &concepts {
+                        if let Some(cat) = c.get("category").and_then(|v| v.as_str()) {
+                            let entry = category_counts.entry(cat.to_string()).or_insert(0);
+                            *entry += 1;
+                        }
+                    }
+
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "nodes": concepts.len(),
+                        "concepts": concepts,
+                        "category_counts": category_counts,
+                    }).to_string())
+                },
+                ("GET", "/api/app/settings") => {
+                    let settings = state
+                        .user_settings
+                        .lock()
+                        .unwrap()
+                        .get(&state.node_address)
+                        .cloned()
+                        .unwrap_or_else(default_user_settings);
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "address": state.node_address,
+                        "settings": settings
+                    }).to_string())
+                },
+                ("POST", "/api/app/settings") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let address = data["address"]
+                        .as_str()
+                        .unwrap_or(&state.node_address)
+                        .to_string();
+                    let raw_settings = if data.get("settings").is_some() {
+                        &data["settings"]
+                    } else {
+                        &data
+                    };
+
+                    let sanitized = sanitize_user_settings(raw_settings);
+                    state
+                        .user_settings
+                        .lock()
+                        .unwrap()
+                        .insert(address.clone(), sanitized.clone());
+
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "address": address,
+                        "settings": sanitized
+                    }).to_string())
+                },
+                ("GET", "/api/drive/files") => {
+                    let files = build_drive_files_payload(&state);
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "count": files.len(),
+                        "files": files
+                    }).to_string())
+                },
+                ("POST", "/api/drive/upload") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let address = data["address"].as_str().unwrap_or(&state.node_address).to_string();
+                    let name = data["name"].as_str().unwrap_or("").trim().to_string();
+                    let body = data["content"].as_str().unwrap_or("").to_string();
+                    let file_type = data["type"].as_str().unwrap_or("TEXT").to_string();
+                    let fragments = data["fragments"].as_u64().unwrap_or(1).max(1);
+
+                    if name.is_empty() {
+                        (400, "application/json", serde_json::json!({ "error": "name is required" }).to_string())
+                    } else {
+                        let file_id = format!("drive:{}:{}", address, name);
+                        let payload = serde_json::json!({
+                            "id": file_id,
+                            "name": name,
+                            "size": format!("{} B", body.len()),
+                            "type": file_type,
+                            "fragments": fragments,
+                            "health": 100,
+                            "uploadedAt": chrono::Utc::now().timestamp_millis(),
+                            "owner": address,
+                            "content": body,
+                            "content_preview": body.chars().take(120).collect::<String>()
+                        });
+
+                        let mut brain = state.brain_db.lock().unwrap();
+                        if !brain.export_snapshot().nodes.contains_key(&state.node_address) {
+                            brain.register_node(NodeMeta::new(&state.node_address, "id", -6.2088, 106.8456));
+                        }
+
+                        match brain.upsert_record(&file_id, payload, DataClass::NodeLocal, &state.node_address) {
+                            Ok(()) => {
+                                if let Err(e) = persist_brain_snapshot(&state, &brain) {
+                                    (500, "application/json", serde_json::json!({ "error": format!("Failed to persist snapshot: {}", e) }).to_string())
+                                } else {
+                                    (200, "application/json", serde_json::json!({
+                                        "status": "success",
+                                        "message": "Drive file uploaded",
+                                        "file_id": file_id
+                                    }).to_string())
+                                }
+                            }
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                        }
+                    }
+                },
+                ("POST", "/api/drive/download") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let file_id = data["file_id"]
+                        .as_str()
+                        .or_else(|| data["id"].as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    let address = data["address"].as_str().unwrap_or(&state.node_address).to_string();
+
+                    if file_id.is_empty() {
+                        (400, "application/json", serde_json::json!({ "error": "file_id is required" }).to_string())
+                    } else {
+                        let brain = state.brain_db.lock().unwrap();
+                        match brain.get_record(&file_id) {
+                            Some(rec) => {
+                                let owner = rec
+                                    .value
+                                    .get("owner")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or(&state.node_address);
+
+                                if owner != address {
+                                    (403, "application/json", serde_json::json!({ "error": "Forbidden: not file owner" }).to_string())
+                                } else {
+                                    let downloaded_at = chrono::Utc::now().timestamp_millis();
+                                    let mut file = rec.value.clone();
+                                    if let Some(obj) = file.as_object_mut() {
+                                        obj.insert("downloadedAt".to_string(), serde_json::Value::Number(downloaded_at.into()));
+                                    }
+
+                                    (200, "application/json", serde_json::json!({
+                                        "status": "success",
+                                        "file_id": file_id,
+                                        "file": file,
+                                        "content": rec.value.get("content").and_then(|v| v.as_str()).unwrap_or("")
+                                    }).to_string())
+                                }
+                            }
+                            None => (404, "application/json", serde_json::json!({ "error": "File not found" }).to_string()),
+                        }
+                    }
+                },
+                ("GET", "/api/auction/list") => {
+                    let auctions = state.auctions.lock().unwrap();
+                    let items: Vec<serde_json::Value> = auctions
+                        .values()
+                        .map(|a| {
+                            let status = match a.status {
+                                AuctionStatus::Active => "ACTIVE",
+                                AuctionStatus::Settled => "SOLD",
+                                AuctionStatus::Cancelled => "CANCELLED",
+                            };
+                            serde_json::json!({
+                                "auction_id": a.auction_id,
+                                "seller": a.seller,
+                                "item": {
+                                    "name": a.item.name,
+                                    "rarity": format!("{:?}", a.item.rarity).to_ascii_uppercase(),
+                                    "power_multiplier": a.item.power_multiplier,
+                                },
+                                "starting_price": a.starting_price,
+                                "highest_bid": a.highest_bid,
+                                "highest_bidder": a.highest_bidder,
+                                "status": status,
+                                "end_time": a.end_time.timestamp_millis(),
+                            })
+                        })
+                        .collect();
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "count": items.len(),
+                        "auctions": items
+                    }).to_string())
+                },
+                ("POST", "/api/auction/create") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let seller = data["seller"].as_str().unwrap_or(&state.node_address).to_string();
+                    let item_name = data["name"].as_str().unwrap_or("Untitled Fragment").trim().to_string();
+                    let starting_price = data["starting_price"].as_f64().unwrap_or(0.0);
+                    let duration_hours = data["duration_hours"].as_i64().unwrap_or(24).max(1);
+                    let rarity = parse_rarity(data["rarity"].as_str().unwrap_or("COMMON"));
+                    let power_multiplier = data["power_multiplier"].as_f64().unwrap_or(1.0).max(0.1);
+
+                    if item_name.is_empty() || starting_price <= 0.0 {
+                        (400, "application/json", serde_json::json!({
+                            "error": "Missing or invalid fields: name, starting_price"
+                        }).to_string())
+                    } else {
+                        let mut next_id = state.next_auction_id.lock().unwrap();
+                        let auction_id = *next_id;
+                        *next_id = next_id.saturating_add(1);
+                        drop(next_id);
+
+                        let item = Item {
+                            name: item_name,
+                            rarity,
+                            power_multiplier,
+                        };
+                        let auction = Auction::new(auction_id, &seller, item, starting_price, duration_hours);
+                        state.auctions.lock().unwrap().insert(auction_id, auction);
+
+                        (200, "application/json", serde_json::json!({
+                            "status": "success",
+                            "auction_id": auction_id,
+                            "message": "Auction created"
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/auction/bid") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let auction_id = data["auction_id"]
+                        .as_u64()
+                        .and_then(|v| u32::try_from(v).ok())
+                        .or_else(|| data["id"].as_str().and_then(|v| parse_prefixed_id(v, "a-")))
+                        .unwrap_or(0);
+                    let bidder = data["bidder"].as_str().unwrap_or(&state.node_address).to_string();
+                    let amount = data["amount"].as_f64().unwrap_or(0.0);
+
+                    if auction_id == 0 || amount <= 0.0 {
+                        (400, "application/json", serde_json::json!({
+                            "error": "Missing or invalid fields: auction_id, amount"
+                        }).to_string())
+                    } else {
+                        let mut auctions = state.auctions.lock().unwrap();
+                        if let Some(auction) = auctions.get_mut(&auction_id) {
+                            let mut wallets = state.wallets.lock().unwrap();
+                            let mut escrow = state.auction_escrow.lock().unwrap();
+                            match auction.place_bid_with_escrow(&bidder, amount, &mut wallets, &mut escrow) {
+                                Ok(message) => (200, "application/json", serde_json::json!({
+                                    "status": "success",
+                                    "auction_id": auction_id,
+                                    "highest_bid": auction.highest_bid,
+                                    "highest_bidder": auction.highest_bidder,
+                                    "message": message
+                                }).to_string()),
+                                Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                            }
+                        } else {
+                            (404, "application/json", serde_json::json!({ "error": "Auction not found" }).to_string())
+                        }
+                    }
+                },
+                ("POST", "/api/auction/settle") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let auction_id = data["auction_id"]
+                        .as_u64()
+                        .and_then(|v| u32::try_from(v).ok())
+                        .or_else(|| data["id"].as_str().and_then(|v| parse_prefixed_id(v, "a-")))
+                        .unwrap_or(0);
+
+                    if auction_id == 0 {
+                        (400, "application/json", serde_json::json!({ "error": "auction_id is required" }).to_string())
+                    } else {
+                        let mut auctions = state.auctions.lock().unwrap();
+                        if let Some(auction) = auctions.get_mut(&auction_id) {
+                            let mut wallets = state.wallets.lock().unwrap();
+                            let mut escrow = state.auction_escrow.lock().unwrap();
+                            let mut pool = EconomyPool::new();
+                            match auction.settle_with_escrow(&mut pool, &mut wallets, &mut escrow) {
+                                Ok((winner, seller, net_to_seller, marketplace_fee)) => {
+                                    let mut total_fees = state.total_fees.lock().unwrap();
+                                    *total_fees += pool.total_fees_collected;
+                                    drop(total_fees);
+
+                                    let mut reward_pool = state.reward_pool.lock().unwrap();
+                                    *reward_pool += pool.reward_pool;
+                                    drop(reward_pool);
+
+                                    let mut total_burned = state.total_burned.lock().unwrap();
+                                    *total_burned += pool.total_burned;
+
+                                    (200, "application/json", serde_json::json!({
+                                        "status": "success",
+                                        "auction_id": auction_id,
+                                        "winner": winner,
+                                        "seller": seller,
+                                        "net_to_seller": net_to_seller,
+                                        "marketplace_fee": marketplace_fee,
+                                        "reward_pool_delta": pool.reward_pool
+                                    }).to_string())
+                                }
+                                Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                            }
+                        } else {
+                            (404, "application/json", serde_json::json!({ "error": "Auction not found" }).to_string())
+                        }
+                    }
+                },
+                ("POST", "/api/auction/cancel") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let auction_id = data["auction_id"]
+                        .as_u64()
+                        .and_then(|v| u32::try_from(v).ok())
+                        .or_else(|| data["id"].as_str().and_then(|v| parse_prefixed_id(v, "a-")))
+                        .unwrap_or(0);
+                    let requester = data["requester"].as_str().unwrap_or(&state.node_address).to_string();
+
+                    if auction_id == 0 {
+                        (400, "application/json", serde_json::json!({ "error": "auction_id is required" }).to_string())
+                    } else {
+                        let mut auctions = state.auctions.lock().unwrap();
+                        if let Some(auction) = auctions.get_mut(&auction_id) {
+                            if requester != auction.seller && requester != state.node_address {
+                                (403, "application/json", serde_json::json!({ "error": "Forbidden: only seller can cancel" }).to_string())
+                            } else {
+                                let mut wallets = state.wallets.lock().unwrap();
+                                let mut escrow = state.auction_escrow.lock().unwrap();
+                                match auction.cancel(&mut wallets, &mut escrow) {
+                                    Ok(message) => (200, "application/json", serde_json::json!({
+                                        "status": "success",
+                                        "auction_id": auction_id,
+                                        "message": message
+                                    }).to_string()),
+                                    Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                                }
+                            }
+                        } else {
+                            (404, "application/json", serde_json::json!({ "error": "Auction not found" }).to_string())
+                        }
+                    }
+                },
+                ("GET", path) if path.starts_with("/api/identity/") => {
+                    let address = path.strip_prefix("/api/identity/").unwrap_or("");
+                    if address.is_empty() {
+                        (400, "application/json", serde_json::json!({ "error": "Missing address" }).to_string())
+                    } else {
+                        let auctions = state.auctions.lock().unwrap();
+                        let gov = state.governance_engine.lock().unwrap();
+                        let reputation = gov.get_reputation(address);
+                        
+                        // Check if address owns any LEGENDARY or MYTHIC items from auction wins
+                        let elite_items: Vec<String> = auctions
+                            .values()
+                            .filter(|a| a.highest_bidder.as_deref() == Some(address) && (a.item.rarity == Rarity::Legendary || a.item.rarity == Rarity::Mythic))
+                            .map(|a| format!("{}_{:?}", a.item.name, a.item.rarity))
+                            .collect();
+                        
+                        let has_elite_shield = !elite_items.is_empty();
+                        
+                        (200, "application/json", serde_json::json!({
+                            "address": address,
+                            "reputation_score": reputation,
+                            "elite_shield": has_elite_shield,
+                            "elite_items": elite_items,
+                            "status": if has_elite_shield { "ELITE_VERIFIED" } else { "VERIFIED" }
+                        }).to_string())
+                    }
                 },
                 ("POST", "/api/app/wallet/transfer") => {
                     let mut content = String::new();
@@ -1590,21 +2300,25 @@ pub fn start_api_server(state: ApiState, port: u16) {
                             }).to_string())
                         } else {
                             drop(admin);
-                            let intent = serde_json::json!({
-                                "type": "TRANSFER_INTENT",
-                                "address": from,
-                                "target": to,
-                                "amount": amount,
-                                "created_at": chrono::Utc::now().timestamp()
-                            }).to_string();
-                            let mut m_lock = state.mempool.lock().unwrap();
-                            m_lock.push(intent);
+                            if let Err(e) = apply_universal_gas_fee(&state, &from) {
+                                (400, "application/json", serde_json::json!({ "error": e }).to_string())
+                            } else {
+                                let intent = serde_json::json!({
+                                    "type": "TRANSFER_INTENT",
+                                    "address": from,
+                                    "target": to,
+                                    "amount": amount,
+                                    "created_at": chrono::Utc::now().timestamp()
+                                }).to_string();
+                                let mut m_lock = state.mempool.lock().unwrap();
+                                m_lock.push(intent);
 
-                            (202, "application/json", serde_json::json!({
-                                "status": "accepted",
-                                "message": "Transfer intent queued",
-                                "mempool_count": m_lock.len()
-                            }).to_string())
+                                (202, "application/json", serde_json::json!({
+                                    "status": "accepted",
+                                    "message": "Transfer intent queued",
+                                    "mempool_count": m_lock.len()
+                                }).to_string())
+                            }
                         }
                     }
                 },
@@ -2503,6 +3217,7 @@ pub fn start_api_server(state: ApiState, port: u16) {
                 // ======================================================================
                 // FAVICON (mencegah 404 spam dari browser)
                 // ======================================================================
+
                 ("GET", "/favicon.ico") => {
                     (204, "image/x-icon", String::new())
                 },
@@ -2759,6 +3474,7 @@ mod tests {
             node_address: node_address.to_string(),
             total_fees: Arc::new(Mutex::new(0.0)),
             total_burned: Arc::new(Mutex::new(0.0)),
+            reward_pool: Arc::new(Mutex::new(0.0)),
             active_effects: Arc::new(Mutex::new(std::collections::HashMap::new())),
             mission_engine: Arc::new(Mutex::new(MissionEngine::new())),
             staking_pool: Arc::new(Mutex::new(std::collections::HashMap::new())),
@@ -2772,6 +3488,7 @@ mod tests {
             aliases: Arc::new(Mutex::new(std::collections::HashMap::new())),
             mempool: Arc::new(Mutex::new(Vec::new())),
             next_block_timestamp: Arc::new(Mutex::new(0)),
+            user_settings: Arc::new(Mutex::new(std::collections::HashMap::new())),
             brain_db: Arc::new(Mutex::new(GeoDistributedBrainDb::new())),
             brain_tokens: Arc::new(Mutex::new(Vec::new())),
             status_cache: Arc::new(Mutex::new(None)),
@@ -2789,6 +3506,9 @@ mod tests {
             }))),
             p2p_seed_peers: Arc::new(Mutex::new(Vec::new())),
             p2p_ban_peers: Arc::new(Mutex::new(Vec::new())),
+            auctions: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            auction_escrow: Arc::new(Mutex::new(EscrowVault::new())),
+            next_auction_id: Arc::new(Mutex::new(1)),
             brain_snapshot_store: Arc::new(Mutex::new(None)),
         };
 
@@ -3559,7 +4279,255 @@ mod tests {
         assert!(response_body.contains("market-42"));
     }
 
+    #[test]
+    fn test_app_settings_roundtrip_endpoint() {
+        let secret = "test_secret_app_settings_roundtrip";
+        let node_address = "nfm_founder_test";
 
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let update_body = serde_json::json!({
+            "settings": {
+                "rpc": "http://127.0.0.1:3999",
+                "theme": "dark",
+                "notifications": {
+                    "rewards": true,
+                    "network": false,
+                    "security": true
+                }
+            }
+        })
+        .to_string();
+
+        let (post_status, post_body) = send_post(port, "/api/app/settings", &update_body, &[]);
+        assert_eq!(post_status, 200);
+        assert!(post_body.contains("127.0.0.1:3999"));
+        assert!(post_body.contains("dark"));
+
+        let (get_status, get_body) = send_get(port, "/api/app/settings", &[]);
+        assert_eq!(get_status, 200);
+        assert!(get_body.contains("127.0.0.1:3999"));
+        assert!(get_body.contains("\"network\":false"));
+    }
+
+    #[test]
+    fn test_app_state_reflects_updated_settings() {
+        let secret = "test_secret_app_state_settings";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let update_body = serde_json::json!({
+            "settings": {
+                "rpc": "http://127.0.0.1:4555",
+                "theme": "light",
+                "notifications": {
+                    "rewards": false,
+                    "network": true,
+                    "security": false
+                }
+            }
+        })
+        .to_string();
+
+        let (post_status, _) = send_post(port, "/api/app/settings", &update_body, &[]);
+        assert_eq!(post_status, 200);
+
+        let (state_status, state_body) = send_get(port, "/api/app/state", &[]);
+        assert_eq!(state_status, 200);
+        assert!(state_body.contains("127.0.0.1:4555"));
+        assert!(state_body.contains("\"theme\":\"light\""));
+    }
+
+    #[test]
+    fn test_drive_upload_and_list_endpoints() {
+        let secret = "test_secret_drive_upload";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let upload_body = serde_json::json!({
+            "address": node_address,
+            "name": "notes-alpha.txt",
+            "content": "hello from drive integration test",
+            "type": "TEXT",
+            "fragments": 2
+        })
+        .to_string();
+
+        let (upload_status, upload_response) = send_post(port, "/api/drive/upload", &upload_body, &[]);
+        assert_eq!(upload_status, 200);
+        assert!(upload_response.contains("Drive file uploaded"));
+        assert!(upload_response.contains("notes-alpha.txt"));
+
+        let (list_status, list_response) = send_get(port, "/api/drive/files", &[]);
+        assert_eq!(list_status, 200);
+        assert!(list_response.contains("notes-alpha.txt"));
+        assert!(list_response.contains("\"count\":"));
+
+        let parsed_upload: serde_json::Value = serde_json::from_str(&upload_response).expect("valid upload response");
+        let file_id = parsed_upload["file_id"].as_str().unwrap_or("");
+        assert!(!file_id.is_empty());
+
+        let download_body = serde_json::json!({
+            "file_id": file_id,
+            "address": node_address
+        })
+        .to_string();
+
+        let (download_status, download_response) = send_post(port, "/api/drive/download", &download_body, &[]);
+        assert_eq!(download_status, 200);
+        assert!(download_response.contains("hello from drive integration test"));
+        assert!(download_response.contains("notes-alpha.txt"));
+    }
+
+
+
+    #[test]
+    fn test_auction_create_bid_and_list_endpoints() {
+        let secret = "test_secret_auction_flow";
+        let node_address = "nfm_founder_test";
+        let bidder = "nfm_bidder_test";
+
+        let mut wallets = WalletEngine::new();
+        wallets.set_balance(bidder, 150.0);
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let create_body = serde_json::json!({
+            "seller": node_address,
+            "name": "Genesis Relic",
+            "rarity": "EPIC",
+            "power_multiplier": 1.8,
+            "starting_price": 10.0,
+            "duration_hours": 24
+        })
+        .to_string();
+
+        let (create_status, create_response) = send_post(port, "/api/auction/create", &create_body, &[]);
+        assert_eq!(create_status, 200);
+        assert!(create_response.contains("Auction created"));
+
+        let create_json: serde_json::Value = serde_json::from_str(&create_response).expect("valid create response");
+        let auction_id = create_json["auction_id"].as_u64().unwrap_or(0);
+        assert!(auction_id > 0);
+
+        let bid_body = serde_json::json!({
+            "auction_id": auction_id,
+            "bidder": bidder,
+            "amount": 20.0
+        })
+        .to_string();
+
+        let (bid_status, bid_response) = send_post(port, "/api/auction/bid", &bid_body, &[]);
+        assert_eq!(bid_status, 200);
+        assert!(bid_response.contains("highest_bid"));
+
+        let (list_status, list_response) = send_get(port, "/api/auction/list", &[]);
+        assert_eq!(list_status, 200);
+        assert!(list_response.contains("Genesis Relic"));
+        assert!(list_response.contains("ACTIVE"));
+    }
+
+    #[test]
+    fn test_identity_endpoint_reports_elite_shield() {
+        let secret = "test_secret_identity_endpoint";
+        let node_address = "nfm_founder_test";
+        let bidder = "nfm_elite_bidder";
+
+        let mut wallets = WalletEngine::new();
+        wallets.set_balance(bidder, 500.0);
+
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let create_body = serde_json::json!({
+            "seller": node_address,
+            "name": "Mythic Crown",
+            "rarity": "MYTHIC",
+            "power_multiplier": 2.5,
+            "starting_price": 25.0,
+            "duration_hours": 24
+        })
+        .to_string();
+
+        let (create_status, create_response) = send_post(port, "/api/auction/create", &create_body, &[]);
+        assert_eq!(create_status, 200);
+        let create_json: serde_json::Value = serde_json::from_str(&create_response).expect("valid create response");
+        let auction_id = create_json["auction_id"].as_u64().unwrap_or(0);
+        assert!(auction_id > 0);
+
+        let bid_body = serde_json::json!({
+            "auction_id": auction_id,
+            "bidder": bidder,
+            "amount": 40.0
+        })
+        .to_string();
+
+        let (bid_status, _) = send_post(port, "/api/auction/bid", &bid_body, &[]);
+        assert_eq!(bid_status, 200);
+
+        let settle_body = serde_json::json!({ "auction_id": auction_id }).to_string();
+        let (settle_status, _) = send_post(port, "/api/auction/settle", &settle_body, &[]);
+        assert_eq!(settle_status, 200);
+
+        let (identity_status, identity_body) = send_get(port, &format!("/api/identity/{}", bidder), &[]);
+        assert_eq!(identity_status, 200);
+        assert!(identity_body.contains("\"elite_shield\":true"));
+        assert!(identity_body.contains("ELITE_VERIFIED"));
+        assert!(identity_body.contains("Mythic Crown_Mythic"));
+    }
+
+    #[test]
+    fn test_governance_indicators_endpoint() {
+        let secret = "test_secret_governance_indicators";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let (status, body) = send_get(port, "/api/governance/indicators", &[]);
+        assert_eq!(status, 200);
+        assert!(body.contains("\"quorum_target\""));
+        assert!(body.contains("\"active_proposals\""));
+        assert!(body.contains("\"treasury_pool\""));
+    }
+
+    #[test]
+    fn test_kg_semantic_endpoint() {
+        let secret = "test_secret_kg_semantic";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let (status, body) = send_get(port, "/api/kg/semantic", &[]);
+        assert_eq!(status, 200);
+        assert!(body.contains("\"concepts\""));
+        assert!(body.contains("\"nodes\""));
+        assert!(body.contains("\"category_counts\""));
+    }
 
     #[test]
     fn test_brain_status_accepts_valid_bearer_token() {

@@ -89,7 +89,7 @@ const AssetDetail = () => {
         <div style={{ flex: '2 1 500px' }}>
           <div className="nfm-glass-card h-full">
             <div className={`nfm-badge nfm-badge--${asset.type === 'AI_SKILL' ? 'cyan' : asset.type === 'NODE_LICENSE' ? 'purple' : 'pink'} mb-4`}>
-              {asset.type.replace('_', ' ')}
+              {asset.type?.replace('_', ' ') || 'Item'}
             </div>
 
             <h1 className="text-3xl text-primary mb-2 font-display">{asset.name}</h1>

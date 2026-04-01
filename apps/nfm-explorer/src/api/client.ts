@@ -45,15 +45,19 @@ export async function appTransfer(to: string, amount: number, from?: string) {
   return request('/api/app/wallet/transfer', 'POST', { to, amount, from });
 }
 
-export async function appCreateProposal(title: string, description: string, proposer?: string) {
-  return request('/api/app/governance/proposal', 'POST', { title, description, proposer });
+export async function appCreateWallet() {
+  return request('/api/app/wallet/create', 'POST');
 }
 
-export async function appVoteProposal(proposalId: string, approve: boolean, voter?: string) {
+export async function appCreateProposal(title: string, description: string, address?: string) {
+  return request('/api/app/governance/proposal', 'POST', { title, description, address });
+}
+
+export async function appVoteProposal(proposalId: string, approve: boolean, address?: string) {
   return request('/api/app/governance/vote', 'POST', {
     proposal_id: proposalId,
     approve,
-    voter,
+    address,
   });
 }
 
@@ -72,6 +76,27 @@ export async function appPurchaseMarketItem(itemId: string, price: number, addre
   return request('/api/app/market/purchase', 'POST', {
     item_id: itemId,
     price,
+    address,
+  });
+}
+
+export async function appDriveUpload(name: string, content: string, address?: string, type: string = 'TEXT') {
+  return request('/api/drive/upload', 'POST', {
+    name,
+    content,
+    address,
+    type,
+    fragments: 1,
+  });
+}
+
+export async function appDriveFiles() {
+  return request('/api/drive/files', 'GET');
+}
+
+export async function appDriveDownload(fileId: string, address?: string) {
+  return request('/api/drive/download', 'POST', {
+    file_id: fileId,
     address,
   });
 }
@@ -110,4 +135,52 @@ export async function p2pBulkBan(endpoints: string[]) {
 
 export async function p2pBulkUnban(endpoints: string[]) {
   return request('/api/p2p/unban/bulk', 'POST', { endpoints });
+}
+
+export async function appAuctionList() {
+  return request('/api/auction/list', 'GET');
+}
+
+export async function appAuctionCreate(seller: string, name: string, rarity: string, power: number, startPrice: number, durationHours: number) {
+  return request('/api/auction/create', 'POST', {
+    seller,
+    item_name: name,
+    item_rarity: rarity,
+    item_power_multiplier: power,
+    starting_price: startPrice,
+    duration_hours: durationHours,
+  });
+}
+
+export async function appAuctionBid(auctionId: number, bidder: string, bidAmount: number) {
+  return request('/api/auction/bid', 'POST', {
+    auction_id: auctionId,
+    bidder,
+    bid_amount: bidAmount,
+  });
+}
+
+export async function appAuctionSettle(auctionId: number) {
+  return request('/api/auction/settle', 'POST', {
+    auction_id: auctionId,
+  });
+}
+
+export async function appAuctionCancel(auctionId: number, requester: string) {
+  return request('/api/auction/cancel', 'POST', {
+    auction_id: auctionId,
+    requester,
+  });
+}
+
+export async function appGetIdentity(address: string) {
+  return request(`/api/identity/${address}`, 'GET');
+}
+
+export async function appGovernanceIndicators() {
+  return request('/api/governance/indicators', 'GET');
+}
+
+export async function appKgSemantic() {
+  return request('/api/kg/semantic', 'GET');
 }

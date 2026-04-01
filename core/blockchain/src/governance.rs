@@ -16,7 +16,7 @@ pub struct Proposal {
 }
 
 /// Sistem Reputasi Node
-#[derive(Debug, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NodeReputation {
     pub address: String,
     pub reputation_score: u64,
@@ -499,7 +499,8 @@ pub struct GovernanceEngine {
     pub learning_windows: LearningWindowManager,        // Langkah 4
     pub intent_voting: IntentVotingEngine,               // Langkah 4
     pub slashing: SlashingEngine,                        // Langkah 4
-    next_proposal_id: u32,
+    pub next_proposal_id: u32,
+    pub storage: Option<crate::governance_storage::GovernanceStorage>,
 }
 
 impl GovernanceEngine {
@@ -512,17 +513,39 @@ impl GovernanceEngine {
             intent_voting: IntentVotingEngine::new(),         // Langkah 4
             slashing: SlashingEngine::new(),                  // Langkah 4
             next_proposal_id: 1,
+            storage: None,
         }
+    }
+
+    /// PHASE 11: Inisialisasi dari storage (Persistent!)
+    pub fn with_storage(storage: crate::governance_storage::GovernanceStorage) -> Self {
+        let mut gov = Self::new();
+        gov.proposals = storage.load_proposals();
+        gov.reputations = storage.load_reputations();
+        
+        // Update next_proposal_id
+        if let Some(max_id) = gov.proposals.iter().map(|p| p.id).max() {
+            gov.next_proposal_id = max_id + 1;
+        }
+        
+        gov.storage = Some(storage);
+        gov
     }
 
     /// Daftarkan reputasi awal sebuah node
     pub fn register_node(&mut self, address: &str) {
-        self.reputations.insert(address.to_string(), NodeReputation {
+        let rep = NodeReputation {
             address: address.to_string(),
             reputation_score: 10,
             epochs_participated: 0,
             blocks_mined: 0,
-        });
+        };
+        
+        self.reputations.insert(address.to_string(), rep.clone());
+
+        if let Some(ref s) = self.storage {
+            let _ = s.save_reputation(&rep);
+        }
     }
 
     /// Tingkatkan reputasi
@@ -530,6 +553,10 @@ impl GovernanceEngine {
         if let Some(rep) = self.reputations.get_mut(address) {
             rep.reputation_score += points;
             rep.epochs_participated += 1;
+            
+            if let Some(ref s) = self.storage {
+                let _ = s.save_reputation(rep);
+            }
         }
     }
 
@@ -543,7 +570,7 @@ impl GovernanceEngine {
         let id = self.next_proposal_id;
         self.next_proposal_id += 1;
 
-        self.proposals.push(Proposal {
+        let proposal = Proposal {
             id,
             title: title.to_string(),
             description: description.to_string(),
@@ -552,8 +579,13 @@ impl GovernanceEngine {
             votes_against: 0,
             voters: Vec::new(),
             is_active: true,
-        });
+        };
 
+        if let Some(ref s) = self.storage {
+            let _ = s.save_proposal(&proposal);
+        }
+
+        self.proposals.push(proposal);
         id
     }
 
@@ -581,6 +613,10 @@ impl GovernanceEngine {
             proposal.votes_for += rep_score;
         } else {
             proposal.votes_against += rep_score;
+        }
+
+        if let Some(ref s) = self.storage {
+            let _ = s.save_proposal(proposal);
         }
 
         Ok(format!("{} voted {} with weight {} on proposal #{}", 

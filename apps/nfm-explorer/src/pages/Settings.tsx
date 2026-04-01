@@ -3,7 +3,6 @@ import {
   Shield, 
   Key, 
   Globe, 
-  Eye, 
   EyeOff, 
   Copy, 
   Download, 
@@ -15,9 +14,10 @@ import {
   CheckCircle,
   ChevronRight,
   ShieldAlert,
-  Server,
   Activity,
-  RefreshCw
+  RefreshCw,
+  Lock,
+  Wifi
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
@@ -25,7 +25,7 @@ import { useAppData } from '../context/AppDataContext';
 const SETTINGS_TAB_KEY = 'nfm.settings.activeTab';
 const SETTINGS_TABS = ['security', 'network', 'prefs'] as const;
 
-// Sub-component: Neural Toggle Switch
+// Sub-component: Neural Toggle Switch (Standardized)
 const NeuralSwitch = ({ 
   active, 
   label, 
@@ -38,10 +38,11 @@ const NeuralSwitch = ({
   onToggle?: () => void 
 }) => (
   <div 
-    className={`flex justify-between items-center p-6 bg-surface-lowest-30 rounded-2xl border transition-all duration-500 group cursor-pointer ${
-      active ? 'border-cyan-20 shadow-[inset_0_0_20px_rgba(0,229,255,0.03)]' : 'border-white-05 hover:border-white-10'
+    className={`nfm-glass-card p-6 flex justify-between items-center transition-all duration-500 group cursor-pointer ${
+      active ? 'border-cyan-40 bg-cyan-05 shadow-glow-cyan--soft' : 'hover:border-white-10'
     }`}
     onClick={onToggle}
+    style={{ marginBottom: 'var(--space-4)' }}
   >
     <div className="flex flex-col gap-1.5 pr-4">
       <div className={`text-sm font-bold tracking-tight transition-colors ${active ? 'text-primary' : 'text-muted'}`}>{label}</div>
@@ -49,10 +50,9 @@ const NeuralSwitch = ({
     </div>
     
     <div className={`w-12 h-6 rounded-full border relative p-1 transition-all duration-500 ${
-      active ? 'bg-cyan-10 border-cyan-40 shadow-glow-cyan--soft' : 'bg-black-40 border-white-10'}`}>
-       {/* Knob */}
-       <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 shadow-xl ${
-         active ? 'right-1 bg-cyan shadow-[0_0_10px_rgba(0,229,255,1)]' : 'right-7 bg-zinc-600'}`}></div>
+      active ? 'bg-cyan-10 border-cyan-40' : 'bg-black-40 border-white-10'}`}>
+       <div className={`absolute top-1 w-4 h-4 rounded-full transition-all duration-500 ${
+         active ? 'right-1 bg-cyan shadow-glow-cyan' : 'right-7 bg-zinc-600'}`}></div>
     </div>
   </div>
 );
@@ -102,6 +102,7 @@ const Settings = () => {
     a.href = url;
     a.download = `nfm_config_${DUMMY_USER.username.replace('@', '')}.json`;
     a.click();
+    notifySuccess('Configuration backup exported');
   };
 
   const handleImportSeed = async () => {
@@ -140,10 +141,6 @@ const Settings = () => {
     <div className="animate-in max-w-7xl mx-auto pb-24">
       {/* Immersive Header Section */}
       <div className="relative mb-12 pt-4">
-        {/* Ambient Glows */}
-        <div className="absolute -top-24 left-1/4 w-2px bg-cyan-05 blur-xl pointer-events-none rounded-full" style={{ filter: 'blur(120px)' }}></div>
-        <div className="absolute top-0 right-1/4 bg-purple-03 blur-lg pointer-events-none rounded-full" style={{ width: '400px', height: '200px', filter: 'blur(100px)' }}></div>
-        
         <div className="relative z-10 flex items-end justify-between border-b border-white-05 pb-8">
           <div className="flex items-center gap-6">
             <button 
@@ -158,7 +155,7 @@ const Settings = () => {
                  <Zap size={22} className="text-cyan animate-pulse" />
                  <h1 className="text-2xl font-display font-bold text-primary tracking-tight">System Core</h1>
               </div>
-              <div className="flex items-center gap-3 mt-1.5 font-mono text-9px font-bold tracking-widest text-muted opacity-60">
+              <div className="flex items-center gap-3 mt-1.5 font-mono text-[9px] font-bold tracking-[0.2em] text-muted opacity-60">
                  <span>PROTOCOL: ENCLAVE_V1.2</span>
                  <span className="text-white-10">|</span>
                  <span className="text-cyan-60">MESH_DISCOVERY: ACTIVE</span>
@@ -167,15 +164,6 @@ const Settings = () => {
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-4 px-5 h-11 bg-surface-lowest-40 border border-white-05 rounded-xl">
-               <div className="flex flex-col items-start pr-4 border-r border-white-05">
-                  <span className="text-10px font-mono font-bold text-success">4.2ms</span>
-               </div>
-               <div className="flex flex-col items-start">
-                  <span className="text-10px font-mono font-bold text-cyan">AX-712-B</span>
-               </div>
-            </div>
-            
             <button 
               className="nfm-btn nfm-btn--primary h-11 px-6 gap-2 font-display font-bold tracking-wide shadow-glow-cyan--soft" 
               onClick={handleExportConfig}
@@ -190,23 +178,23 @@ const Settings = () => {
         
         {/* Navigation Sidebar (3 cols) */}
         <div className="col-span-12 lg:col-span-3 flex flex-col gap-3">
-          <div className="text-9px font-bold text-muted uppercase tracking-widest ml-2 mb-2 opacity-50">Protocol Command Groups</div>
+          <div className="text-9px font-bold text-muted uppercase tracking-widest ml-2 mb-2 opacity-50">Discovery Command Groups</div>
           {[
-            { id: 'security', label: 'Security Hub', icon: <Shield size={18} />, status: 'SECURED' },
-            { id: 'network', label: 'Network & Shard', icon: <Globe size={18} />, status: 'SYNCED' },
-            { id: 'prefs', label: 'Preferences', icon: <Bell size={18} />, status: 'READY' },
+            { id: 'security', label: 'Security Hub', icon: <Shield size={18} />, status: 'SECURED', color: 'cyan' },
+            { id: 'network', label: 'Network & Shard', icon: <Globe size={18} />, status: 'SYNCED', color: 'purple' },
+            { id: 'prefs', label: 'Preferences', icon: <Bell size={18} />, status: 'READY', color: 'pink' },
           ].map((tab) => (
             <button 
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`group flex items-center gap-4 p-4 rounded-2xl transition-all duration-500 text-left border relative overflow-hidden ${
                 activeTab === tab.id 
-                  ? 'bg-cyan-08 border-cyan-30 shadow-[0_4px_30px_rgba(0,229,255,0.08)]' 
+                  ? `bg-surface-lowest border-${tab.color}-40 shadow-glow-${tab.color}--soft` 
                   : 'bg-surface-lowest border-transparent hover:bg-white-03 hover:border-white-10'
               }`}
             >
               <div className={`relative z-10 w-9 h-9 flex items-center justify-center rounded-xl transition-all duration-500 ${
-                activeTab === tab.id ? 'bg-cyan text-black shadow-glow-cyan--soft' : 'bg-surface-highest text-muted group-hover:text-primary'
+                activeTab === tab.id ? `bg-${tab.color} text-black` : 'bg-surface-highest text-muted group-hover:text-primary'
               }`}>
                 {tab.icon}
               </div>
@@ -215,14 +203,13 @@ const Settings = () => {
                 <div className="text-9px text-muted opacity-40 uppercase font-bold tracking-widest mt-0.5">{tab.status}</div>
               </div>
               
-              {/* Scanline Side Indicator */}
               {activeTab === tab.id && (
-                <div className="absolute left-0 top-2 bottom-2 w-2px bg-cyan" style={{ boxShadow: '0 0 10px rgba(0,245,255,1)' }}></div>
+                <div className={`absolute left-0 top-2 bottom-2 w-1 rounded-full bg-${tab.color} shadow-glow-${tab.color}`}></div>
               )}
             </button>
           ))}
 
-          <div className="mt-8 nfm-glass-card border border-white-05 bg-surface-lowest-20 p-6">
+          <div className="mt-8 nfm-glass-card border-white-05 bg-surface-lowest-20 p-6">
              <div className="relative flex items-center justify-between mb-4">
                 <div className="w-8 h-8 rounded-lg bg-success-10 flex items-center justify-center">
                    <ShieldAlert size={16} className="text-success" />
@@ -230,16 +217,18 @@ const Settings = () => {
                 <span className="text-10px text-primary font-bold uppercase tracking-widest">Enclave Status</span>
              </div>
              <div className="flex flex-col gap-4">
-                <p className="text-10px text-muted leading-relaxed">
+                <p className="text-[10px] text-muted leading-relaxed">
                    Advanced End-to-End Encryption is active. All node-specific metadata is stored in a sandboxed hardware module.
                 </p>
-                <div className="flex items-center justify-between pt-4 border-t border-white-05">
-                   <div className="flex items-center gap-2">
-                   <span className="text-[9px] text-white-40 font-mono">LOCAL_HARDWARE</span>
+                <div className="flex flex-col gap-1 pt-4 border-t border-white-05">
+                   <div className="flex items-center justify-between">
+                     <span className="text-[9px] text-white-40 font-mono uppercase tracking-widest">Enc_Standard</span>
+                     <span className="text-[9px] text-primary font-mono">AES-256-GCM</span>
                    </div>
-                </div>
-                <div className="flex items-center justify-between">
-                   <span className="text-9px text-white-40 font-mono">AES-256-GCM</span>
+                   <div className="flex items-center justify-between">
+                     <span className="text-[9px] text-white-40 font-mono uppercase tracking-widest">Hardware_Acc</span>
+                     <span className="text-[9px] text-success font-mono">ENABLED</span>
+                   </div>
                 </div>
              </div>
           </div>
@@ -250,8 +239,7 @@ const Settings = () => {
           
           {activeTab === 'security' && (
             <div className="animate-in-slide flex flex-col gap-8">
-              <div className="nfm-glass-card shadow-glow-cyan border overflow-hidden p-0 relative">
-                {/* Visual Texture Background */}
+              <div className="nfm-glass-card nfm-glass-card--glow-cyan shadow-glow-cyan border overflow-hidden p-0 relative">
                 <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
                      style={{ backgroundImage: 'radial-gradient(var(--neon-cyan) 0.5px, transparent 0.5px)', backgroundSize: '20px 20px' }}></div>
                 
@@ -262,10 +250,10 @@ const Settings = () => {
                           <Key className="text-cyan" size={28} style={{ filter: 'drop-shadow(0 0 15px rgba(0,229,255,0.5))' }} />
                        </div>
                        <div>
-                          <h2 className="text-xl font-display font-bold text-primary mb-1">Discovery Mnemonic Fragment</h2>
+                          <h2 className="text-xl font-display font-bold text-primary mb-1">Mnemonic Identity Fragment</h2>
                           <div className="flex items-center gap-3">
-                             <div className="px-2 py-0.5 rounded bg-warning-10 text-9px text-warning font-bold uppercase tracking-widest border border-warning-20">
-                                Critically Sensitive
+                             <div className="px-2 py-0.5 rounded bg-warning-10 text-[9px] text-warning font-bold uppercase tracking-widest border border-warning-20">
+                                Critically Sensitive Data
                              </div>
                           </div>
                        </div>
@@ -273,24 +261,19 @@ const Settings = () => {
                   </div>
 
                   <p className="text-sm text-muted mb-10 max-w-2xl leading-relaxed">
-                    The 12-word mnemonic fragment below is the master decryption key for your Neural Mesh identity. 
+                    The mnemonic fragment below is the master decryption key for your Neural Mesh identity. 
                     Anyone with these words can permanently claim your node rewards and staked assets. 
-                    <span className="text-white-60 block mt-2">Store this only in a trusted physical format or air-gapped hardware vault.</span>
+                    <span className="text-white-60 block mt-2 font-bold italic opacity-80">!! DO NOT SHARE THIS WITH ANYONE !!</span>
                   </p>
 
                   <div className="relative group bg-surface-lowest-60 rounded-[2.5rem] border border-white-10 p-2 flex flex-col overflow-hidden shadow-2xl">
-                    <div className="absolute top-0 left-0 w-full h-[600px] bg-cyan-08 blur-[200px] opacity-10 pointer-events-none"></div>
-                    <div className="flex items-center justify-between px-10 py-6 relative z-10">
-                      <div className="text-sm font-bold text-muted uppercase tracking-widest">Protocol Metadata</div>
-                    </div>
-                    
                     <div className={`relative p-12 py-16 font-mono text-lg leading-relaxed text-center tracking-[0.2em] transition-all duration-700 rounded-[2rem] overflow-hidden ${!showSeed ? 'blur-2xl select-none grayscale scale-[0.98] bg-black-60' : 'bg-surface-lowest shadow-inner'}`}>
                       {showSeed ? (
                         <div className="flex flex-wrap items-center justify-center gap-4">
                            {activeSeed?.split(' ').map((word: string, i: number) => (
-                             <div key={i} className="flex flex-col items-center gap-1 min-w-[100px] py-3 bg-white-03 rounded-xl border border-white-05 group/word hover:border-cyan-40 hover:bg-cyan-10 transition-all cursor-default">
-                                <span className="text-8px text-white-40 font-mono tracking-tight">{i + 1}</span>
-                                <span className="text-primary group-hover/word:text-cyan transition-colors">{word}</span>
+                             <div key={i} className="flex flex-col items-center gap-1 min-w-[100px] py-4 bg-white-03 rounded-2xl border border-white-05 group/word hover:border-cyan-40 hover:bg-cyan-10 transition-all cursor-default">
+                                <span className="text-[8px] text-white-40 font-mono tracking-tight uppercase">{i + 1}</span>
+                                <span className="text-primary group-hover/word:text-cyan transition-colors text-base font-bold">{word}</span>
                              </div>
                            ))}
                         </div>
@@ -298,9 +281,8 @@ const Settings = () => {
                         '•••• •••• •••• •••• •••• •••• •••• •••• •••• •••• •••• ••••'
                       )}
                       
-                      {/* Scanline Effect */}
                       {showSeed && (
-                        <div className="absolute top-0 left-0 w-full h-2px bg-cyan-40 animate-scanline pointer-events-none" style={{ boxShadow: '0 0 15px rgba(0,245,255,0.5)' }}></div>
+                        <div className="absolute top-0 left-0 w-full h-1 bg-cyan-40 animate-scanline pointer-events-none shadow-glow-cyan"></div>
                       )}
                     </div>
                     
@@ -311,17 +293,15 @@ const Settings = () => {
                           onClick={() => setShowSeed(true)}
                         >
                           <div className="flex items-center gap-4">
-                             <div className="w-8 h-8 rounded-lg bg-black-20 flex items-center justify-center">
-                                <Eye size={18} />
-                             </div>
-                             <span className="font-display font-bold tracking-widest text-lg uppercase">Decrypt Fragment</span>
+                             <Lock size={20} />
+                             <span className="font-display font-bold tracking-widest text-lg uppercase">Decrypt Vault</span>
                           </div>
                         </button>
                         <button 
-                          className="nfm-btn nfm-btn--ghost text-10px shadow-none tracking-widest uppercase mt-4 border-none opacity-50 hover:opacity-100 transition-all"
+                          className="nfm-btn nfm-btn--ghost text-[10px] tracking-widest uppercase mt-4 border-none opacity-50 hover:opacity-100 transition-all"
                           onClick={handleImportSeed}
                         >
-                          Import Existing Mnemonic
+                          Import External Identity
                         </button>
                       </div>
                     )}
@@ -329,22 +309,22 @@ const Settings = () => {
                     {showSeed && (
                       <div className="flex items-center justify-between p-4 px-8 bg-surface-lowest border-t border-white-10 mt-1 rounded-b-[2rem]">
                         <div className="flex items-center gap-3">
-                           <div className="w-2 h-2 rounded-full bg-warning animate-pulse" style={{ boxShadow: '0 0 8px rgba(255,184,0,0.8)' }}></div>
-                           <span className="text-10px text-warning font-bold uppercase tracking-widest">Live Decryption Active</span>
+                           <div className="w-2 h-2 rounded-full bg-warning animate-pulse shadow-glow-warning"></div>
+                           <span className="text-[10px] text-warning font-bold uppercase tracking-widest">Active Decryption Mode</span>
                         </div>
                         <div className="flex gap-3">
                           <button 
-                            className="flex items-center gap-3 px-6 h-11 bg-white-05 hover:bg-white-10 border border-white-10 rounded-xl text-xs font-bold transition-all group/copy"
+                            className="nfm-btn nfm-btn--ghost px-6 h-11 border-white-10 rounded-xl text-xs font-bold transition-all group/copy"
                             onClick={() => handleCopy(activeSeed || '')}
                           >
                             {copied ? (
                               <><CheckCircle size={16} className="text-success" /> Copied</>
                             ) : (
-                              <><Copy size={16} className="text-muted group-hover/copy:text-primary transition-colors" /> Copy phrase</>
+                              <><Copy size={16} className="text-muted group-hover/copy:text-primary transition-colors" /> Copy</>
                             )}
                           </button>
                           <button 
-                            className="flex items-center gap-2 px-6 h-11 bg-white-05 hover:bg-white-10 border border-white-10 rounded-xl text-xs font-bold text-muted hover:text-primary transition-all"
+                            className="nfm-btn nfm-btn--ghost px-6 h-11 border-white-10 rounded-xl text-xs font-bold text-muted hover:text-primary"
                             onClick={() => setShowSeed(false)}
                           >
                             <EyeOff size={18} /> Hide
@@ -357,45 +337,47 @@ const Settings = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="nfm-glass-card group hover:border-purple-40 hover:bg-purple-05 transition-all duration-500 overflow-hidden">
-                  <div className="absolute top-0 right-0 p-6 opacity-05 group-hover:opacity-10 transition-opacity">
-                     <Database size={60} />
+                <div className="nfm-glass-card group hover:border-cyan-40 hover:bg-cyan-05 transition-all duration-500 overflow-hidden relative">
+                  <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-10 transition-opacity">
+                     <Database size={80} />
                   </div>
-                  <h3 className="text-sm font-bold text-primary mb-2 flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-surface-lowest flex items-center justify-center text-purple">
-                       <Download size={14} />
-                    </div>
-                    Encrypted Vault Backup
-                  </h3>
-                  <p className="text-11px text-muted leading-relaxed mb-6">
-                    Download an AES-GCM encrypted container containing your keys, node logic, and localized shard cache.
-                  </p>
-                  <button className="nfm-btn nfm-btn--ghost w-full py-4 text-10px font-bold uppercase tracking-widest border-white-05 group-hover:border-purple-30 group-hover:bg-purple-10" onClick={handleExportConfig}>
-                    Export Secure Archive (.nfm)
-                  </button>
+                  <div className="relative z-10">
+                    <h3 className="text-sm font-bold text-primary mb-3 flex items-center gap-3">
+                       <div className="w-8 h-8 rounded-lg bg-cyan-10 flex items-center justify-center text-cyan">
+                          <Download size={14} />
+                       </div>
+                       Protocol Backup
+                    </h3>
+                    <p className="text-11px text-muted leading-relaxed mb-8">
+                      Download an AES-GCM encrypted container containing your local node configuration and encrypted shards.
+                    </p>
+                    <button className="nfm-btn nfm-btn--ghost w-full py-4 text-[10px] font-bold uppercase tracking-widest border-white-10 group-hover:border-cyan-30 group-hover:bg-cyan-10" onClick={handleExportConfig}>
+                      Export Ident_Archive (.nfm)
+                    </button>
+                  </div>
                 </div>
 
-                <div className="nfm-glass-card group hover:border-error-40 hover:bg-error-02 transition-all duration-500 overflow-hidden">
-                  <div className="p-6 pb-2">
-                    <div className="w-8 h-8 rounded-lg bg-error-10 flex items-center justify-center">
-                       <ShieldAlert size={60} />
-                    </div>
+                <div className="nfm-glass-card group hover:border-error-40 hover:bg-error-02 transition-all duration-500 overflow-hidden relative">
+                  <div className="absolute top-0 right-0 p-8 opacity-[0.03] group-hover:opacity-10 transition-opacity">
+                     <ShieldAlert size={80} />
                   </div>
-                  <h3 className="text-sm font-bold text-error mb-2 flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-error-10 flex items-center justify-center">
-                       <RefreshCw size={14} />
-                    </div>
-                    Protocol Reset
-                  </h3>
-                  <p className="text-11px text-muted leading-relaxed mb-6 italic opacity-70">
-                    Purges all local identity traces. This does not affect rewards stored on the blockchain, but requires seed re-import.
-                  </p>
-                  <button 
-                    className="nfm-btn nfm-btn--danger w-full py-4 text-10px font-bold uppercase tracking-widest"
-                    onClick={handleFactoryWipe}
-                  >
-                    Factory Identity Wipe
-                  </button>
+                  <div className="relative z-10">
+                    <h3 className="text-sm font-bold text-error mb-3 flex items-center gap-3">
+                       <div className="w-8 h-8 rounded-lg bg-error-10 flex items-center justify-center text-error">
+                          <RefreshCw size={14} />
+                       </div>
+                       Security Purge
+                    </h3>
+                    <p className="text-11px text-muted leading-relaxed mb-8 italic opacity-70">
+                      Instantly purge all local identity traces. This does not affect rewards stored on-chain.
+                    </p>
+                    <button 
+                      className="nfm-btn nfm-btn--danger w-full py-4 text-[10px] font-bold uppercase tracking-widest"
+                      onClick={handleFactoryWipe}
+                    >
+                      Factory Identity Wipe
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -403,83 +385,71 @@ const Settings = () => {
 
           {activeTab === 'network' && (
             <div className="animate-in-slide flex flex-col gap-8">
-              <div className="nfm-glass-card relative overflow-hidden">
-                 {/* Background Accent */}
+              <div className="nfm-glass-card nfm-glass-card--glow-purple relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-purple-05 rounded-full blur-xl -mr-32 -mt-32"></div>
                 
                 <h2 className="text-xl font-bold flex items-center gap-3 text-primary mb-12">
-                  <Globe className="text-purple drop-shadow-purple" /> Gateway Interface
+                   <Globe className="text-purple drop-shadow-purple" /> Network Interface
                 </h2>
                 
                 <div className="flex flex-col gap-10">
                   <div className="p-8 bg-surface-lowest-40 rounded-3xl border border-white-05 relative group">
-                    <label className="text-10px font-bold uppercase tracking-widest text-muted mb-4 block">Mesh Discovery Entry Point</label>
+                    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted mb-4 block">Gateway Discovery Entry</label>
                     <div className="flex gap-4">
                       <div className="relative group grow">
                         <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 text-muted">
-                           <Server size={18} />
-                           <span className="text-[10px] font-mono opacity-50 px-2 py-0.5 bg-white-05 rounded">PROMPT_</span>
+                           <Wifi size={18} className="text-purple opacity-50" />
                         </div>
                         <input 
                           type="text" 
-                          className="nfm-input pl-32 font-mono text-sm bg-black-40 h-14 border-white-10 focus:border-purple-60 focus:bg-white-03 shadow-inner"
+                          className="nfm-input pl-12 font-mono text-sm bg-black-40 h-14 border-white-10 focus:border-purple-60 focus:bg-white-03"
                           value={localRpc}
                           onChange={(e) => setLocalRpc(e.target.value)}
                         />
                       </div>
-                        <button 
-                          className="nfm-btn nfm-btn--primary px-10 h-14 font-bold tracking-widest uppercase text-xs"
-                          onClick={() => {
-                            void updateSettings({ rpc: localRpc });
-                          }}
-                        >
-                          Relink Node
-                        </button>
-                    </div>
-                    <div className="flex items-center gap-2 mt-4 ml-2">
-                       <div className="w-1 h-1 rounded-full bg-success"></div>
-                       <span className="text-9px text-muted uppercase font-bold tracking-widest">Shard Sync: 100% Operational</span>
+                      <button 
+                        className="nfm-btn nfm-btn--primary px-10 h-14 font-bold tracking-widest uppercase text-xs shadow-glow-purple--soft"
+                        onClick={() => {
+                          void updateSettings({ rpc: localRpc });
+                        }}
+                      >
+                        Active Relink
+                      </button>
                     </div>
                   </div>
 
                   <div>
-                    <h3 className="text-xs font-bold uppercase tracking-[0.25em] text-muted mb-6 flex items-center gap-3 ml-2">
-                       Shard Proximity Map
+                    <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted mb-6 flex items-center gap-4 ml-2">
+                       Shard Connectivity Map
                        <div className="h-px grow bg-white-05"></div>
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                       {[
-                        { id: 'local', name: 'Shard_01_Local', loc: 'Current Node', lat: '4ms', color: 'cyan', active: true },
-                        { id: 'dev', name: 'Mesh_Alpha_Net', loc: 'Berlin, DE', lat: '120ms', color: 'purple', active: false },
-                        { id: 'main', name: 'Validator_Z_Core', loc: 'Global Cluster', lat: '45ms', color: 'gold', active: false },
+                        { id: 'shard_01', name: 'Neural_Core_DE', loc: 'Current Node', lat: '4ms', status: 'ACTIVE', color: 'cyan' },
+                        { id: 'shard_02', name: 'Mesh_Global_02', loc: 'North America', lat: '120ms', status: 'STANDBY', color: 'purple' },
+                        { id: 'shard_03', name: 'Elite_Validator', loc: 'Asian Shard', lat: '45ms', status: 'STANDBY', color: 'purple' },
                       ].map(shard => (
-                        <div key={shard.id} className={`p-6 rounded-[1.5rem] border transition-all duration-300 cursor-pointer relative group flex flex-col gap-4 ${
-                          shard.active ? 'border-cyan bg-cyan-05 shadow-[0_4px_30px_rgba(0,229,255,0.05)]' : 'border-white-05 bg-white-02 hover:bg-white-04 hover:border-white-10'}`}>
+                        <div key={shard.id} className={`p-6 rounded-3xl border transition-all duration-500 group flex flex-col gap-4 ${
+                          shard.status === 'ACTIVE' ? 'border-cyan-40 bg-cyan-05' : 'border-white-05 bg-surface-lowest hover:border-white-20'}`}>
                            
                            <div className="flex justify-between items-start">
-                              <div className="flex-col">
-                                 <div className={`text-xs font-bold uppercase tracking-tight ${shard.active ? 'text-primary' : 'text-muted'}`}>{shard.id}</div>
-                                 <div className={`text-10px font-bold mt-1 ${shard.active ? 'text-cyan' : 'text-white-40'}`}>{shard.name}</div>
+                              <div className="flex flex-col">
+                                 <div className={`text-[10px] font-bold tracking-widest ${shard.status === 'ACTIVE' ? 'text-primary' : 'text-muted'}`}>{shard.id.toUpperCase()}</div>
+                                 <div className={`text-xs font-bold mt-1 ${shard.status === 'ACTIVE' ? 'text-cyan' : 'text-white-40'}`}>{shard.name}</div>
                               </div>
-                              {shard.active ? (
-                                <div className="w-6 h-6 rounded-lg bg-cyan text-black flex items-center justify-center">
-                                   <CheckCircle size={14} />
-                                </div>
-                              ) : (
-                                <div className="w-6 h-6 rounded-lg border border-white-05 flex items-center justify-center opacity-20">
-                                   <Activity size={12} />
-                                </div>
-                              )}
+                              <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${shard.status === 'ACTIVE' ? 'bg-cyan text-black' : 'border border-white-10 text-white-10'}`}>
+                                 {shard.status === 'ACTIVE' ? <CheckCircle size={14} /> : <Activity size={12} />}
+                              </div>
                            </div>
 
-                           <div className="mt-4 flex items-end justify-between">
+                           <div className="mt-4 flex items-end justify-between border-t border-white-05 pt-4">
                               <div className="flex flex-col gap-1">
-                                 <div className="text-8px text-muted-60 uppercase font-bold tracking-widest leading-none">Region</div>
-                                 <div className="text-10px text-white-50">{shard.loc}</div>
+                                 <div className="text-[8px] text-white-40 uppercase font-black tracking-widest">Region</div>
+                                 <div className="text-[10px] text-primary">{shard.loc}</div>
                               </div>
                               <div className="flex flex-col items-end gap-1">
-                                 <div className="text-8px text-muted-60 uppercase font-bold tracking-widest leading-none">Latency</div>
-                                 <div className={`text-[11px] font-mono font-bold ${shard.active ? 'text-cyan' : 'text-white-60'}`}>{shard.lat}</div>
+                                 <div className="text-[8px] text-white-40 uppercase font-black tracking-widest">Lat</div>
+                                 <div className={`text-[11px] font-mono font-bold ${shard.status === 'ACTIVE' ? 'text-cyan' : 'text-muted'}`}>{shard.lat}</div>
                               </div>
                            </div>
                         </div>
@@ -493,58 +463,42 @@ const Settings = () => {
 
           {activeTab === 'prefs' && (
             <div className="animate-in-slide flex flex-col gap-8">
-              <div className="nfm-glass-card shadow-glow-pink">
+              <div className="nfm-glass-card nfm-glass-card--glow-purple">
                 <h2 className="text-xl font-bold mb-12 flex items-center gap-3 text-primary">
-                  <Bell className="text-pink drop-shadow-pink" /> Neural Interface Tuning
+                   <Bell className="text-pink drop-shadow-pink" /> Interface Parameters
                 </h2>
                 
                 <div className="flex flex-col gap-12">
                   <section>
                     <div className="flex items-center gap-4 mb-8">
-                       <h3 className="text-xs font-bold uppercase tracking-[0.25em] text-muted">Aesthetic Synchronization</h3>
+                       <h3 className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted">Aesthetic Tuning</h3>
                        <div className="h-px grow bg-white-05"></div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                    <div className="grid grid-cols-3 gap-5">
                       {[
-                        { id: 'mesh', name: 'Dark Mesh', desc: 'Protocol Standard' },
-                        { id: 'dark', name: 'Titanium', desc: 'Sober Matrix' },
-                        { id: 'light', name: 'Stellar', desc: 'Light Shard' },
+                        { id: 'mesh', name: 'Dark Mesh', icon: <Moon size={22} />, desc: 'Standard' },
+                        { id: 'dark', name: 'Titanium', icon: <Database size={22} />, desc: 'High Contrast' },
+                        { id: 'light', name: 'Stellar', icon: <Sun size={22} />, desc: 'Light' },
                       ].map(themeItem => {
-                        const theme = {
-                          ...themeItem,
-                          active: localTheme === themeItem.id,
-                          icon: themeItem.id === 'mesh' ? <Moon size={22} className={localTheme === 'mesh' ? 'text-cyan' : 'text-muted'} /> :
-                                themeItem.id === 'dark' ? <Database size={22} className={localTheme === 'dark' ? 'text-cyan' : 'text-muted'} /> :
-                                <Sun size={22} className={localTheme === 'light' ? 'text-cyan' : 'text-muted'} />
-                        };
+                        const active = localTheme === themeItem.id;
                         return (
                         <button 
-                          key={theme.id} 
-                          className={`p-6 py-8 rounded-3xl border flex flex-col items-center gap-5 transition-all duration-300 relative group overflow-hidden ${
-                            theme.active ? 'border-cyan-40 bg-cyan-05 shadow-[0_0_30px_rgba(0,229,255,0.05)] ring-1 ring-cyan-20' : 'border-white-05 bg-surface-lowest hover:border-white-10'
+                          key={themeItem.id} 
+                          className={`p-6 py-10 rounded-3xl border flex flex-col items-center gap-6 transition-all duration-500 relative group ${
+                            active ? 'border-cyan-40 bg-cyan-05 shadow-glow-cyan--soft' : 'border-white-05 bg-surface-lowest hover:border-white-10'
                           }`}
                           onClick={() => {
                             setLocalTheme(themeItem.id);
                             void updateSettings({ theme: themeItem.id as any });
                           }}
                         >
-                           {/* Background Glow */}
-                           {theme.active && <div className="absolute -top-12 -right-12 w-32 h-32 bg-cyan-10 blur-2xl opacity-60"></div>}
-                           
-                           <div className={`p-4 rounded-2xl transition-all duration-500 relative z-10 ${theme.active ? 'bg-cyan-10 border border-cyan-30' : 'bg-white-02 border border-transparent'}`} style={theme.active ? { boxShadow: '0 0 15px rgba(0,229,255,0.2)' } : undefined}>
-                              {theme.icon}
+                           <div className={`p-4 rounded-2xl transition-all duration-500 ${active ? 'bg-cyan text-black' : 'bg-white-02 text-muted'}`}>
+                              {themeItem.icon}
                            </div>
-                           <div className="relative z-10 text-center">
-                              <div className={`text-xs font-bold tracking-tight mb-1 ${theme.active ? 'text-primary' : 'text-muted'}`}>{theme.name}</div>
-                              <div className="text-8px text-muted opacity-40 uppercase font-bold tracking-widest">{theme.desc}</div>
+                           <div className="text-center">
+                              <div className={`text-xs font-bold tracking-tight mb-1 ${active ? 'text-primary' : 'text-muted'}`}>{themeItem.name}</div>
+                              <div className="text-[9px] text-muted opacity-40 uppercase font-black tracking-widest">{themeItem.desc}</div>
                            </div>
-                           
-                           {theme.active && (
-                             <div className="absolute top-3 right-3 text-9px text-cyan font-bold uppercase tracking-widest flex items-center gap-1 animate-in">
-                                <div className="w-1 h-1 rounded-full bg-cyan animate-pulse"></div>
-                                Active
-                             </div>
-                           )}
                         </button>
                       )})}
                     </div>
@@ -552,14 +506,14 @@ const Settings = () => {
 
                   <section className="pt-12 border-t border-white-05">
                      <div className="flex items-center gap-4 mb-10">
-                        <h3 className="text-xs font-bold uppercase tracking-[0.25em] text-muted">Priority Telemetry Alerts</h3>
+                        <h3 className="text-[10px] font-bold uppercase tracking-[0.25em] text-muted">Notification Sub-Sys</h3>
                         <div className="h-px grow bg-white-05"></div>
                      </div>
                     <div className="flex flex-col gap-4">
                       {[
-                         { id: 'rewards', label: 'Inbound Reward Flow', desc: 'Acoustic and visual pings when NVC fragments arrive at your local validator address.' },
-                         { id: 'network', label: 'Peer Sync Latency Filter', desc: 'Monitors the health of your connected mesh nodes. Alert on shard disconnect.' },
-                         { id: 'security', label: 'Neural Watchdog Protocol', desc: 'Automated defense alerts for unauthorized transaction-ready state attempts.' }
+                         { id: 'rewards', label: 'Reward Distribution Alerts', desc: 'Notify when NVC mining rewards or mission claims are confirmed on-chain.' },
+                         { id: 'network', label: 'Shard Connectivity Events', desc: 'Real-time alerts for peer discovery, syncing, and mesh health status changes.' },
+                         { id: 'security', label: 'Neural Firewall Triggers', desc: 'Security alerts for unauthorized signature attempts or remote login attempts.' }
                       ].map(ntf => (
                         <NeuralSwitch 
                           key={ntf.id} 

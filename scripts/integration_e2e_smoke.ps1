@@ -3,6 +3,12 @@ param(
     [string]$P2PPort = "9000",
     [int]$HealthTimeoutSec = 60,
     [int]$SmokeRepeat = 1,
+    [switch]$RunTransferFeeGuard,
+    [switch]$TransferFeeGuardIncludeAcceptedCase,
+    [switch]$RunSecureAuthGuard,
+    [switch]$RunDriveGuard,
+    [switch]$RunIdentityGuard,
+    [switch]$RunPhase6DGuard,
     [switch]$KeepNodeRunning,
     [string]$ArtifactDir = "artifacts/integration-smoke"
 )
@@ -13,17 +19,23 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $runScript = Join-Path $PSScriptRoot "run_blockchain.ps1"
 $healthScript = Join-Path $PSScriptRoot "blockchain_healthcheck.ps1"
 $smokeScript = Join-Path $PSScriptRoot "app_actions_smoke.ps1"
+$transferFeeGuardScript = Join-Path $PSScriptRoot "transfer_fee_guard_smoke.ps1"
+$secureAuthGuardScript = Join-Path $PSScriptRoot "secure_auth_guard_smoke.ps1"
+$driveGuardScript = Join-Path $PSScriptRoot "drive_guard_smoke.ps1"
+$identityGuardScript = Join-Path $PSScriptRoot "identity_guard_smoke.ps1"
+$phase6dGuardScript = Join-Path $PSScriptRoot "phase6d_contract_guard_smoke.ps1"
 $artifactRoot = Join-Path $repoRoot $ArtifactDir
 $startedAt = Get-Date
 $errorMessage = $null
 
-foreach ($required in @($runScript, $healthScript, $smokeScript)) {
+foreach ($required in @($runScript, $healthScript, $smokeScript, $transferFeeGuardScript, $secureAuthGuardScript, $driveGuardScript, $identityGuardScript, $phase6dGuardScript)) {
     if (-not (Test-Path $required)) {
         throw "Missing script: $required"
     }
 }
 
 $baseUrl = "http://127.0.0.1:$ApiPort"
+$dbPath = "nfm_e2e_${ApiPort}.db"
 
 $nodeArgs = @(
     "-NoLogo",
@@ -31,7 +43,9 @@ $nodeArgs = @(
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$runScript`"",
     "-ApiPort", $ApiPort,
-    "-P2PPort", $P2PPort
+    "-P2PPort", $P2PPort,
+    "-DbPath", $dbPath,
+    "-UsePrebuiltBinary"
 )
 
 Write-Host "[NFM-E2E] Starting blockchain node..." -ForegroundColor Cyan
@@ -49,6 +63,52 @@ try {
     & $smokeScript -BaseUrl $baseUrl -Repeat $SmokeRepeat
     if ($LASTEXITCODE -ne 0) {
         throw "Smoke test failed"
+    }
+
+    if ($RunTransferFeeGuard) {
+        Write-Host "[NFM-E2E] Running transfer fee guard smoke test..." -ForegroundColor Cyan
+        if ($TransferFeeGuardIncludeAcceptedCase) {
+            & $transferFeeGuardScript -BaseUrl $baseUrl -IncludeAcceptedCase
+        }
+        else {
+            & $transferFeeGuardScript -BaseUrl $baseUrl
+        }
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Transfer fee guard smoke test failed"
+        }
+    }
+
+    if ($RunSecureAuthGuard) {
+        Write-Host "[NFM-E2E] Running secure auth guard smoke test..." -ForegroundColor Cyan
+        & $secureAuthGuardScript -BaseUrl $baseUrl
+        if ($LASTEXITCODE -ne 0) {
+            throw "Secure auth guard smoke test failed"
+        }
+    }
+
+    if ($RunDriveGuard) {
+        Write-Host "[NFM-E2E] Running drive ownership guard smoke test..." -ForegroundColor Cyan
+        & $driveGuardScript -BaseUrl $baseUrl
+        if ($LASTEXITCODE -ne 0) {
+            throw "Drive ownership guard smoke test failed"
+        }
+    }
+
+    if ($RunIdentityGuard) {
+        Write-Host "[NFM-E2E] Running identity elite shield guard smoke test..." -ForegroundColor Cyan
+        & $identityGuardScript -BaseUrl $baseUrl
+        if ($LASTEXITCODE -ne 0) {
+            throw "Identity guard smoke test failed"
+        }
+    }
+
+    if ($RunPhase6DGuard) {
+        Write-Host "[NFM-E2E] Running Phase 6D contract guard smoke test..." -ForegroundColor Cyan
+        & $phase6dGuardScript -BaseUrl $baseUrl
+        if ($LASTEXITCODE -ne 0) {
+            throw "Phase 6D contract guard smoke test failed"
+        }
     }
 
     Write-Host "[NFM-E2E] Integration smoke test PASSED." -ForegroundColor Green
@@ -81,8 +141,15 @@ finally {
         base_url = $baseUrl
         api_port = $ApiPort
         p2p_port = $P2PPort
+        db_path = $dbPath
         health_timeout_sec = $HealthTimeoutSec
         smoke_repeat = $SmokeRepeat
+        run_transfer_fee_guard = [bool]$RunTransferFeeGuard
+        transfer_fee_guard_include_accepted_case = [bool]$TransferFeeGuardIncludeAcceptedCase
+        run_secure_auth_guard = [bool]$RunSecureAuthGuard
+        run_drive_guard = [bool]$RunDriveGuard
+        run_identity_guard = [bool]$RunIdentityGuard
+        run_phase6d_guard = [bool]$RunPhase6DGuard
         keep_node_running = [bool]$KeepNodeRunning
         node_pid = if ($nodeProc) { $nodeProc.Id } else { $null }
         error = $errorMessage
@@ -102,6 +169,12 @@ finally {
         "p2p_port=$($summary.p2p_port)",
         "health_timeout_sec=$($summary.health_timeout_sec)",
         "smoke_repeat=$($summary.smoke_repeat)",
+        "run_transfer_fee_guard=$($summary.run_transfer_fee_guard)",
+        "transfer_fee_guard_include_accepted_case=$($summary.transfer_fee_guard_include_accepted_case)",
+        "run_secure_auth_guard=$($summary.run_secure_auth_guard)",
+        "run_drive_guard=$($summary.run_drive_guard)",
+        "run_identity_guard=$($summary.run_identity_guard)",
+        "run_phase6d_guard=$($summary.run_phase6d_guard)",
         "keep_node_running=$($summary.keep_node_running)",
         "node_pid=$($summary.node_pid)",
         "error=$($summary.error)"

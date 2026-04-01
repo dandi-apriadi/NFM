@@ -30,12 +30,22 @@ export interface KGConcept {
 
 export interface MarketItem {
   id: string;
-  name: string;
-  creator: string;
+  name?: string;
+  title?: string;
+  creator?: string;
+  seller?: string;
   price: number;
-  type: 'AI_SKILL' | 'FRAGMENT' | 'NODE_LICENSE';
-  sales: number;
-  rating: number;
+  type?: 'AI_SKILL' | 'FRAGMENT' | 'NODE_LICENSE';
+  sales?: number;
+  rating?: number;
+  auction_id?: number;
+  starting_price?: number;
+  highest_bid?: number;
+  highest_bidder?: string;
+  rarity?: string;
+  power_multiplier?: number;
+  status?: string;
+  end_time?: number;
 }
 
 export interface Quest {
@@ -155,6 +165,9 @@ const EMPTY_STATE: AppState = {
     status: 'SYNCING',
     blocks: 0,
     total_burned: 0,
+    reward_pool: 0,
+    circulating_supply: 0,
+    total_supply: 100000000,
     peers: 0,
   },
   blocks: [],
@@ -210,7 +223,7 @@ interface AppDataContextValue {
   clearToast: () => void;
   requestPrompt: (options: PromptModalOptions) => Promise<string | null>;
   requestConfirm: (options: ConfirmModalOptions) => Promise<boolean>;
-  updateSettings: (settings: Partial<UserProfile['settings']>) => Promise<void>;
+  updateSettings: (settings: Partial<NonNullable<UserProfile['settings']>>) => Promise<void>;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);
@@ -294,7 +307,7 @@ export const AppDataProvider = ({ children }: { children: React.ReactNode }) => 
     setModalState(null);
   };
 
-  const updateSettings = async (next: Partial<UserProfile['settings']>) => {
+  const updateSettings = async (next: Partial<NonNullable<UserProfile['settings']>>) => {
     const currentSettings = data.user_profile.settings || EMPTY_STATE.user_profile.settings!;
     const newSettings: Required<Exclude<UserProfile['settings'], undefined>> = {
       rpc: next.rpc ?? currentSettings.rpc,

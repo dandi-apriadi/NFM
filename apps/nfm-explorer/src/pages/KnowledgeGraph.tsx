@@ -1,25 +1,53 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Share2, FileText, Database, GitMerge, Search, LayoutTemplate, Activity, Network, Layers, ZoomIn, ZoomOut, Maximize2, ArrowRight, Box } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
+import { appKgSemantic } from '../api/client';
 
 const KnowledgeGraph = () => {
   const navigate = useNavigate();
   const { data, notifySuccess } = useAppData();
   const DUMMY_KG_CONCEPTS = data.kg_concepts;
+  const [semanticConcepts, setSemanticConcepts] = useState<Array<{ id: string; name: string; category: 'CODE' | 'DOCUMENT' | 'ENTITY'; connections: number }>>([]);
 
   const [viewMode, setViewMode] = useState<'2D' | '3D'>('2D');
   const [zoom, setZoom] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const totalNodes = DUMMY_KG_CONCEPTS.length;
-  const totalLinks = DUMMY_KG_CONCEPTS.reduce((sum, concept) => sum + concept.connections, 0);
-  const uniqueCategories = new Set(DUMMY_KG_CONCEPTS.map((concept) => concept.category));
+  useEffect(() => {
+    const loadSemantic = async () => {
+      try {
+        const response = await appKgSemantic() as { concepts?: Array<{ id?: string; name?: string; category?: string; connections?: number }> };
+        const concepts = (response.concepts ?? []).map((c, idx) => {
+          const category: 'CODE' | 'DOCUMENT' | 'ENTITY' =
+            c.category === 'CODE' || c.category === 'ENTITY' ? c.category : 'DOCUMENT';
+          return {
+            id: c.id ?? `kg-${idx + 1}`,
+            name: c.name ?? c.id ?? `Concept ${idx + 1}`,
+            category,
+            connections: Number(c.connections ?? 0),
+          };
+        });
+        setSemanticConcepts(concepts);
+      } catch {
+        setSemanticConcepts([]);
+      }
+    };
+    void loadSemantic();
+  }, [DUMMY_KG_CONCEPTS.length]);
+
+  const conceptSource = useMemo(() => {
+    return semanticConcepts.length > 0 ? semanticConcepts : DUMMY_KG_CONCEPTS;
+  }, [semanticConcepts, DUMMY_KG_CONCEPTS]);
+
+  const totalNodes = conceptSource.length;
+  const totalLinks = conceptSource.reduce((sum, concept) => sum + concept.connections, 0);
+  const uniqueCategories = new Set(conceptSource.map((concept) => concept.category));
   const graphDensity = totalNodes > 1
     ? Math.min(1, totalLinks / (totalNodes * (totalNodes - 1)))
     : 0;
 
-  const filteredConcepts = DUMMY_KG_CONCEPTS.filter((concept) => {
+  const filteredConcepts = conceptSource.filter((concept) => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) {
       return true;
@@ -28,8 +56,8 @@ const KnowledgeGraph = () => {
   });
 
   const handleInspectNode = () => {
-    if (DUMMY_KG_CONCEPTS[0]?.id) {
-      sessionStorage.setItem('nfm_explorer_query', DUMMY_KG_CONCEPTS[0].id);
+    if (conceptSource[0]?.id) {
+      sessionStorage.setItem('nfm_explorer_query', conceptSource[0].id);
     }
     navigate('/explorer');
   };

@@ -7,6 +7,7 @@ mod auction;
 mod security;
 mod governance;
 mod governance_api;
+mod governance_storage;
 mod network;
 mod transfer;
 mod api;
@@ -76,6 +77,14 @@ impl Blockchain {
         Blockchain { chain, storage }
     }
 
+    /// PHASE 11: Ambil rangkuman ekonomi dari block terakhir
+    fn get_last_economy_summary(&self) -> Option<crate::block::EconomySummary> {
+        self.chain.last().and_then(|block| {
+            let data: crate::block::BlockData = serde_json::from_str(&block.data).ok()?;
+            Some(data.economy)
+        })
+    }
+
     fn create_genesis(&mut self, founder_address: &str) {
         if !self.chain.is_empty() { return; }
 
@@ -118,11 +127,12 @@ impl Blockchain {
         self.chain.last().expect("Chain should not be empty")
     }
 
-    fn get_epoch_reward(&self) -> f64 {
-        let height = self.chain.len() as u32;
-        let halvings = height / 420480;
+    fn get_epoch_reward(block_height: u64) -> f64 {
+        let base_reward = 100.0;
+        let halving_interval = 420_000;
+        let halvings = block_height / halving_interval;
         if halvings >= 64 { return 0.0; }
-        100.0 / (2.0f64.powi(halvings as i32))
+        base_reward / (2.0f64.powi(halvings as i32))
     }
 }
 
@@ -140,10 +150,25 @@ fn main() {
     let mut blockchain = Blockchain::new(Some(db_path));
     
     let mut pool = EconomyPool::new();
+    if let Some(eco) = blockchain.get_last_economy_summary() {
+        pool.total_fees_collected = eco.fees_collected;
+        pool.total_burned = eco.burned;
+        println!("[ECONOMY] Restored state from last block: fees={:.4}, burned={:.4}", 
+                 pool.total_fees_collected, pool.total_burned);
+    }
     let mut reward_engine = RewardEngine::new();
     let mut registry = CouponRegistry::new();
     let mut security = NexusSecurity::new();
-    let mut gov = GovernanceEngine::new();
+    let governance_db_path = format!("{}_governance.db", db_path);
+    let gov_storage = match crate::governance_storage::GovernanceStorage::open(&governance_db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("[GOV][WARN] Gagal membuka governance storage: {}", e);
+            // Fallback ke in-memory jika gagal, tapi beri peringatan keras
+            crate::governance_storage::GovernanceStorage::open("temp_gov.db").unwrap()
+        }
+    };
+    let mut gov = GovernanceEngine::with_storage(gov_storage);
     let mut admin_engine = AdminEngine::new();
     let mut contracts = ContractEngine::new();
     let missions = MissionEngine::new();
@@ -314,6 +339,7 @@ fn main() {
     let api_wallets = wallets.clone(); // Re-use the SAME SHARED state
     let api_fees = Arc::new(Mutex::new(pool.total_fees_collected));
     let api_burned = Arc::new(Mutex::new(pool.total_burned));
+    let api_reward_pool = Arc::new(Mutex::new(pool.reward_pool));
     let api_effects = Arc::new(Mutex::new(contracts.active_effects.clone()));
     let api_missions = Arc::new(Mutex::new(missions));
     let shared_staking = Arc::new(Mutex::new(contracts.staking_pool.clone()));
@@ -373,6 +399,7 @@ fn main() {
         node_address: founder.address.clone(),
         total_fees: api_fees.clone(),
         total_burned: api_burned.clone(),
+        reward_pool: api_reward_pool.clone(),
         active_effects: api_effects.clone(),
         mission_engine: api_missions.clone(),
         staking_pool: shared_staking.clone(),
@@ -385,12 +412,16 @@ fn main() {
         aliases: api_aliases,
         mempool: shared_mempool.clone(),
         next_block_timestamp: shared_next_block.clone(),
+        user_settings: Arc::new(Mutex::new(std::collections::HashMap::new())),
         brain_db: shared_brain_db.clone(),
         brain_tokens: Arc::new(Mutex::new(Vec::new())), // Whitelist tokens—empty means open access
         status_cache: Arc::new(Mutex::new(None)),
         p2p_status: shared_p2p_status.clone(),
         p2p_seed_peers: shared_p2p_seeds.clone(),
         p2p_ban_peers: shared_p2p_banlist.clone(),
+        auctions: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        auction_escrow: Arc::new(Mutex::new(crate::auction::EscrowVault::new())),
+        next_auction_id: Arc::new(Mutex::new(1)),
         brain_snapshot_store: Arc::new(Mutex::new(brain_snapshot_store)),
     };
     api::start_api_server(api_state, node_config.api_port);
@@ -424,8 +455,8 @@ fn main() {
                  if let Some(ref s) = blockchain.storage { let _ = s.clear(); }
                  blockchain.chain.clear();
                  let genesis_data = crate::block::BlockData {
-                     transactions: vec!["GENESIS_REWARD: @founder (+500 NVC)".to_string()],
-                     rewards: vec![crate::block::NodeRewardInfo { address: founder.address.clone(), amount: 500.0, category: "Genesis Provision".to_string() }],
+                     transactions: vec!["GENESIS_REWARD: @founder (+100 NVC)".to_string()],
+                     rewards: vec![crate::block::NodeRewardInfo { address: founder.address.clone(), amount: 100.0, category: "Genesis Provision".to_string() }],
                      economy: crate::block::EconomySummary { fees_collected: 0.0, burned: 0.0, epoch_number: 0 },
                  };
                  let genesis_json = serde_json::to_string(&genesis_data).unwrap_or_default();
@@ -434,10 +465,10 @@ fn main() {
                  blockchain.chain.push(genesis);
                  let mut w_lock = wallets.lock().unwrap();
                  w_lock.balances.clear();
-                 w_lock.set_balance(&founder.address, 500.0);
+                 w_lock.set_balance(&founder.address, 100.0);
                  drop(w_lock);
                  if let Ok(mut chain_lock) = api_chain.lock() { *chain_lock = blockchain.chain.clone(); }
-                 println!("[SYSTEM] Nuke complete. Economy reset to Genesis with 500 NVC Payout.");
+                 println!("[SYSTEM] Nuke complete. Economy reset to Genesis with 100 NVC Payout.");
             } else if msg == "COMMAND_P2P_SYNC" {
                 if node_config.p2p_gossip_enabled {
                     if let Ok(best_len) = p2p_node.sync_longest_chain() {
@@ -593,7 +624,7 @@ fn main() {
             }
 
             // [PHASE 21] 100 NVC Base Inflation with Halving Support
-            let base_inflation = blockchain.get_epoch_reward();
+            let base_inflation = Blockchain::get_epoch_reward(blockchain.chain.len() as u64);
             pool.reward_pool += base_inflation;
             
             let mut active_nodes = std::vec::Vec::new();
