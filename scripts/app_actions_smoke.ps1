@@ -100,7 +100,7 @@ Assert-Status -Result $stateBefore -Allowed @(200)
 
 $userAddress = [string]$stateBefore.Payload.user_profile.nfmAddress
 $startingBalance = [double]$stateBefore.Payload.user_profile.balance
-$startingProposals = @($stateBefore.Payload.proposals).Count
+$createdProposalIds = @()
 
 if ([string]::IsNullOrWhiteSpace($userAddress)) {
     throw "user_profile.nfmAddress is empty in /api/app/state"
@@ -135,6 +135,7 @@ for ($i = 1; $i -le $Repeat; $i++) {
     if ([string]::IsNullOrWhiteSpace($proposalId)) {
         throw "proposal_id missing in governance proposal response"
     }
+    $createdProposalIds += $proposalId
     Write-Host "[OK] Governance proposal created: $proposalId" -ForegroundColor Green
 
     # 3) Vote proposal (backend may require reputation > 0)
@@ -185,9 +186,17 @@ $stateAfter = Invoke-JsonRequest -Method "GET" -Path "/api/app/state"
 Assert-Status -Result $stateAfter -Allowed @(200)
 
 $endingProposals = @($stateAfter.Payload.proposals).Count
-$expectedMinProposals = $startingProposals + $Repeat
-if ($endingProposals -lt $expectedMinProposals) {
-    throw "Expected proposal count to increase by at least $Repeat (before=$startingProposals, after=$endingProposals)"
+$visibleIds = @($stateAfter.Payload.proposals | ForEach-Object {
+    $id = [string]$_.id
+    if ([string]::IsNullOrWhiteSpace($id)) { return $null }
+    if ($id.StartsWith("prop-")) { return $id.Substring(5) }
+    return $id
+})
+
+foreach ($expected in $createdProposalIds) {
+    if ($visibleIds -notcontains $expected) {
+        throw "Created proposal id $expected is not visible in /api/app/state proposals payload"
+    }
 }
 
 $endingBalance = [double]$stateAfter.Payload.user_profile.balance

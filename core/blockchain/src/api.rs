@@ -158,6 +158,85 @@ fn parse_rarity(raw: &str) -> Rarity {
     }
 }
 
+fn build_nlc_preview(input_raw: &str, aliases: &HashMap<String, String>) -> serde_json::Value {
+    let input = input_raw.trim().to_lowercase();
+    let amount = input
+        .split_whitespace()
+        .find_map(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+
+    if input.is_empty() {
+        return serde_json::json!({
+            "action": "UNKNOWN",
+            "executable": false,
+            "reason": "Empty command"
+        });
+    }
+
+    if input.contains("stake") || input.contains("deposit") {
+        return serde_json::json!({
+            "action": "STAKE",
+            "amount": amount,
+            "requires_signature": true,
+            "requires_gas": true,
+            "executable": amount > 0.0,
+            "reason": if amount > 0.0 { "recognized" } else { "Amount not recognized" }
+        });
+    }
+
+    if input.contains("register") || input.contains("login") {
+        return serde_json::json!({
+            "action": "REGISTER_IDENTITY",
+            "requires_signature": true,
+            "requires_gas": true,
+            "executable": true,
+            "reason": "recognized"
+        });
+    }
+
+    if input == "command_nuke_database" {
+        return serde_json::json!({
+            "action": "NUKE_DATABASE",
+            "requires_signature": true,
+            "requires_gas": false,
+            "executable": true,
+            "reason": "recognized"
+        });
+    }
+
+    if input.contains("transfer") || input.contains("send") {
+        let raw_target = input
+            .split_whitespace()
+            .find(|s| s.starts_with('@') || s.starts_with("nfm_"))
+            .unwrap_or_default();
+        let target_id = raw_target.replace('@', "");
+
+        let mut resolved = target_id.clone();
+        if let Some(addr) = aliases.get(&format!("@{}", target_id)) {
+            resolved = addr.clone();
+        } else if let Some(addr) = aliases.get(&target_id) {
+            resolved = addr.clone();
+        }
+
+        return serde_json::json!({
+            "action": "TRANSFER",
+            "amount": amount,
+            "target": target_id,
+            "resolved_target": resolved,
+            "requires_signature": true,
+            "requires_gas": true,
+            "executable": amount > 0.0 && !target_id.is_empty(),
+            "reason": if amount > 0.0 && !target_id.is_empty() { "recognized" } else { "Could not identify amount or target" }
+        });
+    }
+
+    serde_json::json!({
+        "action": "UNKNOWN",
+        "executable": false,
+        "reason": "Intent not understood by NLC Bridge"
+    })
+}
+
 fn default_user_settings() -> serde_json::Value {
     serde_json::json!({
         "rpc": "http://127.0.0.1:3000",
@@ -473,6 +552,7 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         serde_json::json!({ "method": "GET", "path": "/api/mempool", "description": "Pending intents", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/transfer/create", "description": "Queue a transfer intent", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/transfer/secure", "description": "Signed transfer", "authRequired": true }),
+        serde_json::json!({ "method": "POST", "path": "/api/nlc/preview", "description": "Preview NLC intent parse without execution", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/app/settings", "description": "Read UI settings for active node", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/app/settings", "description": "Update UI settings for active node", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/drive/files", "description": "List indexed drive files", "authRequired": false }),
@@ -483,6 +563,10 @@ fn build_frontend_app_state(state: &ApiState) -> serde_json::Value {
         serde_json::json!({ "method": "POST", "path": "/api/auction/bid", "description": "Place an escrow-backed bid", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/auction/settle", "description": "Settle auction and distribute payout", "authRequired": false }),
         serde_json::json!({ "method": "POST", "path": "/api/auction/cancel", "description": "Cancel auction and refund escrow", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/brain/curriculum/propose", "description": "Propose a brain curriculum learning window", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/brain/curriculum/active", "description": "List active curriculum learning windows", "authRequired": false }),
+        serde_json::json!({ "method": "POST", "path": "/api/brain/curriculum/vote", "description": "Vote and optionally execute curriculum intent", "authRequired": false }),
+        serde_json::json!({ "method": "GET", "path": "/api/brain/reputation/leaderboard", "description": "Top reputation leaderboard for brain governance", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/governance/indicators", "description": "Governance quorum, treasury, and veto risk indicators", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/kg/semantic", "description": "Semantic knowledge graph view with typed concepts", "authRequired": false }),
         serde_json::json!({ "method": "GET", "path": "/api/brain/status", "description": "Distributed brain health", "authRequired": false }),
@@ -1971,6 +2055,140 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         "top_candidates": candidates
                     }).to_string())
                 },
+                ("POST", "/api/brain/curriculum/propose") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let current_height = state.chain.lock().unwrap().len() as u64;
+                    let proposer = data["address"].as_str().unwrap_or(&state.node_address).to_string();
+                    let epoch = data["epoch"].as_u64().unwrap_or(current_height / 100 + 1);
+                    let start_block = data["start_block"].as_u64().unwrap_or(current_height);
+                    let end_block = data["end_block"].as_u64().unwrap_or(start_block.saturating_add(120));
+                    let model_version = data["model_version"].as_str().unwrap_or("nfm-brain-v1").to_string();
+                    let intent = data["intent"].as_str().unwrap_or("start_learning_window").to_string();
+                    let requires_quorum = data["requires_quorum"].as_bool().unwrap_or(true);
+
+                    if end_block <= start_block {
+                        (400, "application/json", serde_json::json!({ "error": "end_block must be greater than start_block" }).to_string())
+                    } else {
+                        let mut gov = state.governance_engine.lock().unwrap();
+                        if gov.get_reputation(&proposer) == 0 {
+                            gov.register_node(&proposer);
+                        }
+
+                        let window_id = gov.learning_windows.open_window(epoch, start_block, end_block, &model_version);
+                        let _ = gov.learning_windows.join_window(window_id, &proposer);
+
+                        match gov.intent_voting.propose_intent_vote(&intent, requires_quorum) {
+                            Ok(vote_id) => (200, "application/json", serde_json::json!({
+                                "status": "success",
+                                "window_id": window_id,
+                                "intent_vote_id": vote_id,
+                                "epoch": epoch,
+                                "model_version": model_version,
+                                "intent": intent
+                            }).to_string()),
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                        }
+                    }
+                },
+                ("GET", "/api/brain/curriculum/active") => {
+                    let gov = state.governance_engine.lock().unwrap();
+                    let windows: Vec<serde_json::Value> = gov
+                        .learning_windows
+                        .active_windows()
+                        .iter()
+                        .map(|w| serde_json::json!({
+                            "id": w.id,
+                            "epoch": w.epoch,
+                            "start_block": w.start_block,
+                            "end_block": w.end_block,
+                            "model_version": w.model_version,
+                            "participants": w.participants,
+                            "is_active": w.is_active
+                        }))
+                        .collect();
+
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "count": windows.len(),
+                        "windows": windows
+                    }).to_string())
+                },
+                ("POST", "/api/brain/curriculum/vote") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let vote_id = data["vote_id"]
+                        .as_u64()
+                        .and_then(|v| u32::try_from(v).ok())
+                        .unwrap_or(0);
+                    let voter = data["address"].as_str().unwrap_or(&state.node_address).to_string();
+                    let approve = data["approve"].as_bool().unwrap_or(true);
+                    let execute_now = data["execute_now"].as_bool().unwrap_or(true);
+
+                    if vote_id == 0 {
+                        (400, "application/json", serde_json::json!({ "error": "vote_id is required" }).to_string())
+                    } else {
+                        let mut gov = state.governance_engine.lock().unwrap();
+                        if gov.get_reputation(&voter) == 0 {
+                            gov.register_node(&voter);
+                        }
+                        let rep = gov.get_reputation(&voter);
+
+                        match gov.intent_voting.cast_intent_vote(vote_id, &voter, approve, rep) {
+                            Ok(message) => {
+                                let execution = if execute_now {
+                                    match gov.intent_voting.execute_intent_vote(vote_id) {
+                                        Ok(approved) => serde_json::json!({ "executed": true, "approved": approved }),
+                                        Err(e) => serde_json::json!({ "executed": false, "error": e }),
+                                    }
+                                } else {
+                                    serde_json::json!({ "executed": false })
+                                };
+
+                                (200, "application/json", serde_json::json!({
+                                    "status": "success",
+                                    "vote_id": vote_id,
+                                    "message": message,
+                                    "execution": execution
+                                }).to_string())
+                            }
+                            Err(e) => (400, "application/json", serde_json::json!({ "error": e }).to_string()),
+                        }
+                    }
+                },
+                ("GET", "/api/brain/reputation/leaderboard") => {
+                    let gov = state.governance_engine.lock().unwrap();
+                    let mut entries: Vec<crate::governance::NodeReputation> = gov.reputations.values().cloned().collect();
+                    entries.sort_by(|a, b| {
+                        b.reputation_score
+                            .cmp(&a.reputation_score)
+                            .then_with(|| b.blocks_mined.cmp(&a.blocks_mined))
+                            .then_with(|| a.address.cmp(&b.address))
+                    });
+
+                    let leaderboard: Vec<serde_json::Value> = entries
+                        .iter()
+                        .take(20)
+                        .enumerate()
+                        .map(|(idx, e)| serde_json::json!({
+                            "rank": idx + 1,
+                            "address": e.address,
+                            "reputation_score": e.reputation_score,
+                            "epochs_participated": e.epochs_participated,
+                            "blocks_mined": e.blocks_mined
+                        }))
+                        .collect();
+
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "count": leaderboard.len(),
+                        "leaderboard": leaderboard
+                    }).to_string())
+                },
                 ("POST", "/api/brain/route") => {
                     let mut content = String::new();
                     request.as_reader().read_to_string(&mut content).ok();
@@ -2427,6 +2645,20 @@ pub fn start_api_server(state: ApiState, port: u16) {
                         }
                     }
                 },
+                ("POST", "/api/nlc/preview") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+                    let data: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+
+                    let input = data["input"].as_str().unwrap_or("");
+                    let aliases = state.aliases.lock().unwrap();
+                    let preview = build_nlc_preview(input, &aliases);
+
+                    (200, "application/json", serde_json::json!({
+                        "status": "success",
+                        "preview": preview
+                    }).to_string())
+                },
                 ("GET", url) if url.starts_with("/api/wallet/history") => {
                     let address = url.split("address=").nth(1).unwrap_or("");
                     let chain = state.chain.lock().unwrap();
@@ -2617,6 +2849,75 @@ pub fn start_api_server(state: ApiState, port: u16) {
                             "status": "success", 
                             "message": format!("Rate Limiting has been {}", status_msg), 
                             "is_enabled": *enabled 
+                        }).to_string())
+                    }
+                },
+                ("POST", "/api/admin/reset") => {
+                    let mut content = String::new();
+                    request.as_reader().read_to_string(&mut content).ok();
+
+                    // --- DEVELOPMENT-ONLY: BLOCKCHAIN RESET TO GENESIS [DEV-ONLY] ---
+                    // This endpoint allows resetting all blockchain state back to genesis during development.
+                    // IMPORTANT: This will be removed before production deployment.
+                    // --- AUTH CHECK [K-01] ---
+                    let sig_header = request.headers().iter()
+                        .find(|h| h.field.as_str().to_ascii_lowercase() == "x-nfm-signature")
+                        .map(|h| h.value.as_str().to_string())
+                        .unwrap_or_default();
+                    if !verify_admin_signature(&state.api_secret, "/api/admin/reset", &content, &sig_header) {
+                        (403, "application/json", serde_json::json!({ "error": "Forbidden: invalid signature" }).to_string())
+                    } else {
+                        // Reset all blockchain state to genesis conditions
+                        *state.chain.lock().unwrap() = Vec::new();
+                        *state.total_fees.lock().unwrap() = 0.0;
+                        *state.total_burned.lock().unwrap() = 0.0;
+                        *state.reward_pool.lock().unwrap() = 0.0;
+                        state.active_effects.lock().unwrap().clear();
+                        
+                        // Reset mission engine collections
+                        let mut mission_engine = state.mission_engine.lock().unwrap();
+                        mission_engine.completed_missions.clear();
+                        mission_engine.active_assignments.clear();
+                        mission_engine.contribution_tracker.clear();
+                        mission_engine.user_inventory.clear();
+                        drop(mission_engine);
+                        
+                        // Reset staking pool
+                        state.staking_pool.lock().unwrap().clear();
+                        
+                        // Reset wallet engine
+                        let mut wallet_engine = state.wallets.lock().unwrap();
+                        wallet_engine.balances.clear();
+                        drop(wallet_engine);
+                        
+                        // Reset governance
+                        state.governance_engine.lock().unwrap().proposals.clear();
+                        
+                        // Reset aliases and mempool
+                        state.aliases.lock().unwrap().clear();
+                        state.mempool.lock().unwrap().clear();
+                        
+                        // Reset timestamp to now
+                        *state.next_block_timestamp.lock().unwrap() = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        
+                        // Reset user settings
+                        state.user_settings.lock().unwrap().clear();
+                        
+                        // Reset auctions
+                        state.auctions.lock().unwrap().clear();
+                        *state.next_auction_id.lock().unwrap() = 1;
+
+                        state.block_tx.send("ADMIN_RESET: Blockchain reset to genesis conditions".to_string()).ok();
+                        (200, "application/json", serde_json::json!({ 
+                            "status": "success", 
+                            "message": "Blockchain reset to genesis. All state cleared.",
+                            "timestamp": std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
                         }).to_string())
                     }
                 },
@@ -4527,6 +4828,79 @@ mod tests {
         assert!(body.contains("\"concepts\""));
         assert!(body.contains("\"nodes\""));
         assert!(body.contains("\"category_counts\""));
+    }
+
+    #[test]
+    fn test_nlc_preview_parses_transfer_intent() {
+        let secret = "test_secret_nlc_preview";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+        let body = serde_json::json!({
+            "input": "send 12.5 @nfm_target_user"
+        })
+        .to_string();
+
+        let (status, response) = send_post(port, "/api/nlc/preview", &body, &[]);
+        assert_eq!(status, 200);
+        assert!(response.contains("\"action\":\"TRANSFER\""));
+        assert!(response.contains("\"amount\":12.5"));
+        assert!(response.contains("\"executable\":true"));
+    }
+
+    #[test]
+    fn test_brain_curriculum_propose_vote_and_leaderboard() {
+        let secret = "test_secret_brain_curriculum";
+        let node_address = "nfm_founder_test";
+
+        let wallets = WalletEngine::new();
+        let mut admin = AdminEngine::new();
+        admin.register_admin(node_address);
+
+        let port = start_test_api_server(secret, node_address, wallets, admin, true);
+
+        let propose_body = serde_json::json!({
+            "address": node_address,
+            "epoch": 1,
+            "start_block": 1,
+            "end_block": 100,
+            "model_version": "nfm-brain-v1",
+            "intent": "start_learning_window",
+            "requires_quorum": true
+        })
+        .to_string();
+
+        let (propose_status, propose_resp) = send_post(port, "/api/brain/curriculum/propose", &propose_body, &[]);
+        assert_eq!(propose_status, 200);
+        assert!(propose_resp.contains("\"window_id\""));
+        assert!(propose_resp.contains("\"intent_vote_id\""));
+
+        let propose_json: serde_json::Value = serde_json::from_str(&propose_resp).expect("valid propose response");
+        let vote_id = propose_json["intent_vote_id"].as_u64().unwrap_or(0);
+        assert!(vote_id > 0);
+
+        let (active_status, active_resp) = send_get(port, "/api/brain/curriculum/active", &[]);
+        assert_eq!(active_status, 200);
+        assert!(active_resp.contains("\"windows\""));
+
+        let vote_body = serde_json::json!({
+            "vote_id": vote_id,
+            "address": node_address,
+            "approve": true,
+            "execute_now": true
+        })
+        .to_string();
+        let (vote_status, vote_resp) = send_post(port, "/api/brain/curriculum/vote", &vote_body, &[]);
+        assert_eq!(vote_status, 200);
+        assert!(vote_resp.contains("\"execution\""));
+
+        let (lb_status, lb_resp) = send_get(port, "/api/brain/reputation/leaderboard", &[]);
+        assert_eq!(lb_status, 200);
+        assert!(lb_resp.contains("\"leaderboard\""));
     }
 
     #[test]

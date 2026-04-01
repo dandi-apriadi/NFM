@@ -245,9 +245,9 @@ const NodeRunner = () => {
    };
 
   return (
-    <div className="animate-in">
+    <div className="animate-in pb-12">
       {/* Header & Health Status */}
-      <div className="flex items-center justify-between wrap gap-4" style={{ marginBottom: 'var(--space-8)' }}>
+      <div className="flex items-center justify-between wrap gap-4" style={{ marginBottom: 'var(--space-10)' }}>
         <div>
            <h1 className="text-cyan flex items-center gap-2"><Terminal size={24} /> Node Operator Console</h1>
            <div className="flex items-center gap-4 mt-2">
@@ -273,7 +273,7 @@ const NodeRunner = () => {
         display: 'grid', 
         gridTemplateColumns: 'repeat(4, 1fr)', 
         gap: 'var(--space-6)', 
-        marginBottom: 'var(--space-8)' 
+        marginBottom: 'var(--space-10)' 
       }}>
         {[
           { label: 'CPU LOAD', value: `${DUMMY_NODE_STATS.cpu}%`, icon: <Cpu size={16}/>, color: 'cyan', bar: DUMMY_NODE_STATS.cpu },
@@ -281,12 +281,12 @@ const NodeRunner = () => {
                { label: 'CONNECTED PEERS', value: p2p.peer_count, icon: <Globe size={16}/>, color: 'pink', bar: Math.min(100, p2p.peer_count * 20) },
                { label: 'RETRY COUNTDOWN', value: reconnectCountdown > 0 ? formatTime(reconnectCountdown) : '00:00', icon: <RefreshCw size={16}/>, color: 'gold', bar: reconnectCountdown > 0 ? Math.min(100, (reconnectCountdown / 60) * 100) : 0 },
         ].map((stat, idx) => (
-          <div key={idx} className="nfm-glass-card" style={{ padding: 'var(--space-5)', marginBottom: 0 }}>
-             <div className="flex items-center justify-between mb-3">
+          <div key={idx} className="nfm-glass-card" style={{ padding: 'var(--space-6)', marginBottom: 0 }}>
+             <div className="flex items-center justify-between mb-4">
                 <span className="text-10px text-muted uppercase tracking-widest">{stat.label}</span>
                 <div className={`text-${stat.color}`}>{stat.icon}</div>
              </div>
-             <div className="text-2xl font-display text-primary mb-3">{stat.value}</div>
+             <div className="text-2xl font-display text-primary mb-4">{stat.value}</div>
              <div className="nfm-progress" style={{ height: '3px', background: 'rgba(255,255,255,0.05)' }}>
                 <div className={`nfm-progress__fill nfm-progress__fill--${stat.color}`} style={{ width: `${stat.bar}%` }}></div>
              </div>
@@ -294,10 +294,10 @@ const NodeRunner = () => {
         ))}
       </div>
 
-      <div className="flex gap-6 wrap" style={{ flexWrap: 'wrap' }}>
+      <div className="flex gap-10 wrap" style={{ flexWrap: 'wrap' }}>
         
         {/* Left Column: Logs & Peers */}
-        <div className="flex-col gap-6" style={{ flex: '2 1 600px' }}>
+        <div className="flex flex-col gap-8" style={{ flex: '2 1 600px' }}>
           
           {/* Main Terminal Stream */}
           <div className="nfm-glass-card nfm-glass-card--glow-cyan p-0 overflow-hidden" style={{ border: '1px solid rgba(0, 245, 255, 0.1)' }}>
@@ -315,9 +315,9 @@ const NodeRunner = () => {
                </div>
             </div>
             
-            <div className="font-mono text-11px p-6 overflow-y-auto bg-black-40" style={{ height: '280px' }}>
+            <div className="font-mono text-11px p-6 overflow-y-auto bg-black-40" style={{ height: '320px' }}>
               {terminalLogs.map((log, i) => (
-                <div key={i} className="mb-1.5 flex gap-3 whitespace-nowrap">
+                <div key={i} className="mb-2.5 flex gap-3 whitespace-nowrap">
                    <span className="text-muted opacity-40">[{log.time}]</span>
                    <span className={`font-bold w-12 ${log.level === 'INFO' ? 'text-cyan-60' : log.level === 'OK' ? 'text-success' : 'text-purple-60'}`}>
                       {log.level}
@@ -419,12 +419,12 @@ const NodeRunner = () => {
         </div>
 
         {/* Right Column: Actions & Docs */}
-        <div className="flex-col gap-6" style={{ flex: '1 1 350px' }}>
+        <div className="flex flex-col gap-8" style={{ flex: '1 1 350px' }}>
           
           {/* Developer Action Hub */}
-          <div className="nfm-glass-card p-6">
+          <div className="nfm-glass-card p-6" style={{ marginBottom: 0 }}>
              <h3 className="text-xs text-muted uppercase tracking-widest mb-6">Operator Toolkit</h3>
-             <div className="flex-col gap-3">
+             <div className="flex flex-col gap-4">
                 <button className="nfm-btn nfm-btn--secondary w-full justify-start text-11px gap-3 h-11 border-purple-20 hover:border-purple" onClick={handleRotateKeys}>
                    <Key size={14} className="text-purple" /> Rotate Validator Keys
                 </button>
@@ -450,9 +450,9 @@ const NodeRunner = () => {
           </div>
 
           {/* Performance Strategies (Renamed) */}
-          <div className="nfm-glass-card--glow-cyan p-6">
-             <h3 className="text-xs text-muted uppercase tracking-widest mb-4">Operational Strategy</h3>
-             <div className="flex-col gap-3">
+          <div className="nfm-glass-card--glow-cyan p-6" style={{ marginBottom: 0 }}>
+             <h3 className="text-xs text-muted uppercase tracking-widest mb-6">Operational Strategy</h3>
+             <div className="flex flex-col gap-4">
                 <div className="nfm-performance-card nfm-performance-card--selected p-4 bg-cyan-10 border-cyan-30 rounded-xl border">
                    <div className="flex justify-between items-center mb-1">
                       <div className="text-11px font-bold text-primary flex items-center gap-2">
@@ -460,23 +460,23 @@ const NodeRunner = () => {
                       </div>
                       <CheckCircle size={12} className="text-cyan" />
                    </div>
-                   <p className="text-[10px] text-muted">Prioritizes block proposing and AI task execution for max rewards.</p>
+                   <p className="text-[10px] text-muted leading-relaxed">Prioritizes block proposing and AI task execution for max rewards.</p>
                 </div>
-                <div className="nfm-performance-card p-4 bg-white-02 border-white-05 rounded-xl border opacity-50">
-                   <div className="text-11px font-bold text-primary flex items-center gap-2 mb-1">
+                <div className="nfm-performance-card p-5 bg-white-02 border-white-05 rounded-xl border opacity-50">
+                   <div className="text-11px font-bold text-primary flex items-center gap-2 mb-2">
                       <Leaf size={12} className="text-success" /> Eco / Background
                    </div>
-                   <p className="text-10px text-muted">Limits AI workload and reduces CPU frequency to save energy.</p>
+                   <p className="text-10px text-muted leading-relaxed">Limits AI workload and reduces CPU frequency to save energy.</p>
                 </div>
              </div>
           </div>
 
           {/* Quick API Reference */}
-          <div className="nfm-glass-card p-6">
-             <h3 className="text-xs text-muted uppercase tracking-widest mb-4 flex items-center gap-2">
+          <div className="nfm-glass-card p-6" style={{ marginBottom: 0 }}>
+             <h3 className="text-xs text-muted uppercase tracking-widest mb-6 flex items-center gap-2">
                 <Info size={14} className="text-gold" /> API Endpoint Preview
              </h3>
-             <div className="flex-col gap-3">
+             <div className="flex flex-col gap-4">
                 {DUMMY_API_DOCS.slice(0, 3).map((api, idx) => (
                    <div key={idx} className="p-3 bg-surface-lowest rounded-lg border border-white-05">
                       <div className="flex items-center gap-2 mb-1">

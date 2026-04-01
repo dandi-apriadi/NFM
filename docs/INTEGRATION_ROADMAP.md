@@ -1,7 +1,7 @@
 # NFM Frontend-Backend Integration Roadmap
 
 Date: 2026-04-01
-Status: Draft for execution
+Status: Active execution (Phase 6A-6E completed, Brain Curriculum baseline active)
 
 ## Goal
 Menyelesaikan seluruh gap integrasi fitur antara nfm-explorer frontend dan blockchain backend berdasarkan dokumen produk, kondisi endpoint aktual, dan wiring UI saat ini.
@@ -26,26 +26,21 @@ Sudah berjalan end-to-end:
 - Pre-release gate tersedia: scripts/pre_release_policy_gate.ps1
 
 Belum end-to-end atau masih parsial:
-- Identity and title system
-- Auction and escrow APIs
-- Drive upload/download lifecycle
-- Native brain curriculum governance loop
-- Settings persistence endpoint
-- Tokenomics transparency dashboard
-- Knowledge graph semantic contract
+- NLC workflow UX
+- Brain curriculum advanced governance lifecycle (quorum/execution automation)
 
 ## Gap Matrix (Prioritized)
 
 | Feature | Backend | Frontend | Gap Type | Priority | Definition of Done |
 |---|---|---|---|---|---|
-| NFM-ID Titles and Elite Shield visibility | Struktur identity ada, endpoint publik belum jelas | UI badge/title belum ada | Missing wiring + API read model | High | Endpoint identity tersedia, badge/title tampil di profile/dashboard, elite shield state terlihat |
-| Auction and Escrow Marketplace | Engine auction ada, route API auction belum expose penuh | Marketplace page masih listing-centric, belum bidding flow | Missing API + UI flow | Critical | Create/bid/cancel/settle berjalan, escrow state tampil, anti-sniping terbaca |
-| NFM Drive SDS | Data drive tampil dari app state, upload endpoint belum tersedia | Tombol upload masih menampilkan error endpoint belum tersedia | Missing API | High | Upload/list/download API aktif, progress upload dan health fragment tampil |
-| Native Brain Curriculum | Endpoint brain route/benchmark/fetch ada, curriculum governance belum expose | AIBrain masih command mock dan queue monitor | Missing governance loop | High | Proposal curriculum, voting, learning window, leaderboard tampil di UI |
-| Settings persistence | client.ts memanggil api app settings | backend route app settings belum tersedia | Missing API | Medium | Settings tersimpan server-side, refresh state mengembalikan nilai konsisten |
-| Governance advanced mechanics | Basic proposal/vote ada | Governance UI ada | Partial feature parity | Medium | Voting power berbasis stake, quorum/veto indicator, execution status tampil |
-| Tokenomics dashboard | total_fees/total_burned ada pada status | visualisasi fee, burn rate, supply flow belum komplit | Partial UI integration | Medium | Panel tokenomics live dengan source dari endpoint status dan state |
-| Knowledge Graph semantic view | Brain snapshot records ada | KG page butuh concept metadata terstruktur | Contract mismatch | Medium | Endpoint KG return schema kategori/relasi, UI render cluster and detail |
+| NFM-ID Titles and Elite Shield visibility | Endpoint /api/identity/{address} + elite logic sudah aktif | Badge elite sudah tampil di Marketplace | Integrated + guarded | High | Endpoint identity tersedia, badge/title tampil di profile/dashboard, elite shield state terlihat |
+| Auction and Escrow Marketplace | Endpoint create/list/bid/settle/cancel sudah aktif | Marketplace sudah mendukung create/bid/settle flow | Integrated + guarded | Critical | Create/bid/cancel/settle berjalan, escrow state tampil, anti-sniping terbaca |
+| NFM Drive SDS | Upload/list/download endpoint aktif + ownership guard | UI upload/download aktif di Drive page | Integrated + guarded | High | Upload/list/download API aktif, progress upload dan health fragment tampil |
+| Native Brain Curriculum | Endpoint curriculum propose/active/vote + leaderboard sudah aktif | AIBrain sudah wired ke curriculum governance flow | Integrated (baseline) + guarded | High | Proposal curriculum, voting, learning window, leaderboard tampil di UI |
+| Settings persistence | GET/POST /api/app/settings aktif | Settings page sudah sinkron ke backend | Integrated | Medium | Settings tersimpan server-side, refresh state mengembalikan nilai konsisten |
+| Governance advanced mechanics | GET /api/governance/indicators aktif | Governance page sudah konsumsi quorum/veto/treasury | Integrated (read model) | Medium | Voting power berbasis stake, quorum/veto indicator, execution status tampil |
+| Tokenomics dashboard | status payload memuat reward_pool/circulating/total_supply | Explorer sudah tampilkan sebagian metrik tokenomics | Partial UI integration | Medium | Panel tokenomics live dengan source dari endpoint status dan state |
+| Knowledge Graph semantic view | GET /api/kg/semantic aktif | KnowledgeGraph page sudah konsumsi endpoint semantic + fallback | Integrated (read model) | Medium | Endpoint KG return schema kategori/relasi, UI render cluster and detail |
 | NLC workflow UX | Endpoint api nlc ada dan protected | UI dedicated NLC builder belum ada | Missing frontend workflow | Medium | Intent builder, preview intent, result history tersedia |
 
 ## Execution Plan
@@ -98,6 +93,28 @@ Deliverables:
 - scripts/pre_release_policy_gate.ps1 includes new checks
 - docs/report and roadmap updated with integration completion score
 
+## Execution Status Snapshot (2026-04-01)
+- Phase 6A: Completed
+- Phase 6B: Completed
+- Phase 6C: Completed (identity + brain curriculum baseline)
+- Phase 6D: Completed (governance indicators + KG semantic + frontend wiring)
+- Phase 6E: Completed (guards expanded incl. identity + Phase6D + frontend flow + brain curriculum contracts)
+
+Current gate coverage:
+- Transfer fee guard
+- Secure auth guard
+- Drive ownership guard
+- Identity elite shield guard
+- Phase 6D contract guard (/api/governance/indicators + /api/kg/semantic)
+- Frontend flow contract guard (/api/app/state + marketplace/drive/governance/kg read models)
+- Brain curriculum contract guard (/api/brain/curriculum/propose + /api/brain/curriculum/active + /api/brain/curriculum/vote + /api/brain/reputation/leaderboard)
+
+## Next Phase (Operational)
+Phase berikutnya difokuskan pada NLC workflow UX dan brain curriculum lifecycle hardening:
+1. NLC intent builder + preview + history di frontend.
+2. Governance-grade execution lifecycle untuk curriculum (quorum, timeout, execution status).
+3. Add dedicated NLC and curriculum execution guards into policy gate.
+
 ## Non-Negotiable Rules During Integration
 1. Tidak boleh bypass secure endpoint auth/signature.
 2. Tidak boleh bypass gas fee enforcement di transfer intent.
@@ -142,13 +159,13 @@ Deliverables:
 
 ## Progress Tracking Template
 Gunakan checklist ini per phase:
-- [ ] API contract finalized
-- [ ] Backend handler implemented
-- [ ] Frontend wiring completed
-- [ ] Type contract aligned
-- [ ] Tests added and passing
-- [ ] Policy gate updated
-- [ ] Documentation updated
+- [x] API contract finalized
+- [x] Backend handler implemented
+- [x] Frontend wiring completed
+- [x] Type contract aligned
+- [x] Tests added and passing
+- [x] Policy gate updated
+- [x] Documentation updated
 
 ## Success Criteria
 Roadmap dianggap selesai jika:

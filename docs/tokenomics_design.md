@@ -8,7 +8,7 @@ A sustainable circular economy model powered by $NVC (Neural Fragment Mesh Coin)
 - **Decimals**: 8
 
 ## 2. Epoch Rewards (Base Inflation)
-Every 5 minutes (One Epoch), the system mints 500 NVC. 
+Every 5 minutes (One Epoch), the system mints 100 NVC. 
 - **60% Staking Nodes**: Distributed to active validators.
 - **40% Ecosystem Expansion**: Allocated for Hub development and AI training.
 

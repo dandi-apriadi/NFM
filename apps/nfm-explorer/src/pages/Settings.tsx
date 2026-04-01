@@ -17,10 +17,12 @@ import {
   Activity,
   RefreshCw,
   Lock,
-  Wifi
+  Wifi,
+  AlertTriangle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppData } from '../context/AppDataContext';
+import * as client from '../api/client';
 
 const SETTINGS_TAB_KEY = 'nfm.settings.activeTab';
 const SETTINGS_TABS = ['security', 'network', 'prefs'] as const;
@@ -134,6 +136,25 @@ const Settings = () => {
       setLocalSeed('');
       notifySuccess('Factory wipe complete. Local data purged.');
       setTimeout(() => window.location.reload(), 1500);
+    }
+  };
+
+  const handleBlockchainReset = async () => {
+    const secret = await requestPrompt({
+      title: '[DEV] Reset Blockchain to Genesis',
+      message: 'Enter API secret to reset all blockchain state to genesis (IRREVERSIBLE):',
+      placeholder: 'API Secret',
+      confirmText: 'Reset',
+    });
+    if (secret) {
+      try {
+        notifySuccess('Resetting blockchain to genesis...');
+        await client.appAdminResetBlockchain(secret);
+        notifySuccess('✅ Blockchain reset complete! All state cleared to genesis.');
+        setTimeout(() => window.location.reload(), 2000);
+      } catch (err) {
+        notifyError(`⚠️ Reset failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   };
 
@@ -532,6 +553,26 @@ const Settings = () => {
                           }}
                         />
                       ))}
+                    </div>
+                  </section>
+
+                  <section className="pt-12 border-t border-warning-20 bg-warning-05 rounded-2xl p-8">
+                     <div className="flex items-center gap-4 mb-10">
+                        <AlertTriangle size={20} className="text-warning" />
+                        <h3 className="text-[10px] font-bold uppercase tracking-[0.25em] text-warning">Development Tools (Temporary)</h3>
+                        <div className="h-px grow bg-white-05"></div>
+                     </div>
+                     <p className="text-[10px] text-muted mb-8 italic opacity-60">
+                        These tools are for development/testing only and will be removed before production. Use with caution!
+                     </p>
+                    <div className="flex gap-4">
+                      <button 
+                        className="flex-1 nfm-btn nfm-btn--danger py-4 px-6 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-3 rounded-2xl transition-all duration-300"
+                        onClick={handleBlockchainReset}
+                      >
+                        <RefreshCw size={16} />
+                        Reset Blockchain to Genesis
+                      </button>
                     </div>
                   </section>
                 </div>

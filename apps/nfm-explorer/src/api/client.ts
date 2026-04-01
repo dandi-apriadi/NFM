@@ -177,10 +177,53 @@ export async function appGetIdentity(address: string) {
   return request(`/api/identity/${address}`, 'GET');
 }
 
+export async function appNlcPreview(input: string, address?: string) {
+  return request('/api/nlc/preview', 'POST', {
+    input,
+    address,
+  });
+}
+
+export async function appBrainCurriculumPropose(payload: {
+  address?: string;
+  epoch?: number;
+  start_block?: number;
+  end_block?: number;
+  model_version?: string;
+  intent?: string;
+  requires_quorum?: boolean;
+}) {
+  return request('/api/brain/curriculum/propose', 'POST', payload as Json);
+}
+
+export async function appBrainCurriculumActive() {
+  return request('/api/brain/curriculum/active', 'GET');
+}
+
+export async function appBrainCurriculumVote(voteId: number, approve: boolean, address?: string, executeNow: boolean = true) {
+  return request('/api/brain/curriculum/vote', 'POST', {
+    vote_id: voteId,
+    approve,
+    address,
+    execute_now: executeNow,
+  });
+}
+
+export async function appBrainReputationLeaderboard() {
+  return request('/api/brain/reputation/leaderboard', 'GET');
+}
+
 export async function appGovernanceIndicators() {
   return request('/api/governance/indicators', 'GET');
 }
 
 export async function appKgSemantic() {
   return request('/api/kg/semantic', 'GET');
+}
+
+// ========== DEVELOPMENT-ONLY: BLOCKCHAIN RESET ==========
+// This function resets the entire blockchain to genesis state.
+// Will be removed before production deployment.
+export async function appAdminResetBlockchain(adminSecret: string) {
+  return request('/api/admin/reset', 'POST', { secret: adminSecret });
 }

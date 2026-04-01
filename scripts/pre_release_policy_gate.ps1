@@ -47,7 +47,10 @@ $integrationArgs = @(
     "-RunSecureAuthGuard",
     "-RunDriveGuard",
     "-RunIdentityGuard",
-    "-RunPhase6DGuard"
+    "-RunPhase6DGuard",
+    "-RunFrontendFlowGuard",
+    "-RunBrainCurriculumGuard",
+    "-RunNLCSecureExecutionGuard"
 )
 if ($KeepNodeRunning) {
     $integrationArgs += "-KeepNodeRunning"

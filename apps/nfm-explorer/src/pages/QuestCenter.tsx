@@ -55,9 +55,9 @@ const QuestCenter = () => {
    };
 
   return (
-    <div className="animate-in">
+    <div className="animate-in pb-12">
       {/* Header with Rank Badges */}
-      <div className="flex items-center justify-between" style={{ marginBottom: 'var(--space-8)' }}>
+      <div className="flex items-center justify-between wrap gap-4" style={{ marginBottom: 'var(--space-10)' }}>
         <div>
           <h1 className="text-cyan flex items-center gap-2"><Target /> Core Quest Center</h1>
           <p className="text-muted text-sm mt-1">Contribute to the NFM mesh, train local AI models, and secure the network to earn NVC.</p>
@@ -77,7 +77,7 @@ const QuestCenter = () => {
         display: 'grid', 
         gridTemplateColumns: 'repeat(4, 1fr)', 
         gap: 'var(--space-6)', 
-        marginBottom: 'var(--space-8)' 
+        marginBottom: 'var(--space-10)' 
       }}>
         {[
                { label: 'Total Rewards', value: `${totalRewardsNvc.toFixed(1)} NVC`, icon: <Trophy size={16}/>, color: 'gold' },
@@ -85,8 +85,8 @@ const QuestCenter = () => {
                { label: 'Active Streak', value: `${streakDays} Days`, icon: <Flame size={16}/>, color: 'pink' },
                { label: 'Reputation', value: reputation.toLocaleString(), icon: <Shield size={16}/>, color: 'purple' },
         ].map((stat, idx) => (
-          <div key={idx} className="nfm-glass-card" style={{ padding: 'var(--space-5)', marginBottom: 0 }}>
-            <div className="flex items-center gap-3 mb-3">
+          <div key={idx} className="nfm-glass-card" style={{ padding: 'var(--space-6)', marginBottom: 0 }}>
+            <div className="flex items-center gap-3 mb-4">
               <div className={`p-2 rounded-lg bg-surface-lowest text-${stat.color}`}>
                 {stat.icon}
               </div>
@@ -97,11 +97,11 @@ const QuestCenter = () => {
         ))}
       </div>
 
-      <div className="flex gap-6 wrap" style={{ flexWrap: 'wrap' }}>
+      <div className="flex gap-10 wrap" style={{ flexWrap: 'wrap' }}>
         
         {/* Main Mission Hub */}
-        <div className="flex-col gap-6" style={{ flex: '2 1 600px' }}>
-          <div className="nfm-glass-card nfm-glass-card--glow-cyan p-8" style={{ border: '1px solid rgba(0, 245, 255, 0.1)' }}>
+        <div className="flex flex-col gap-6" style={{ flex: '2 1 600px' }}>
+          <div className="nfm-glass-card nfm-glass-card--glow-cyan p-10" style={{ border: '1px solid rgba(0, 245, 255, 0.1)', marginBottom: 0 }}>
             <div className="flex justify-between items-center mb-6">
                <h2 className="text-xl text-primary flex items-center gap-3">
                   <Zap className="text-gold" fill="currentColor" /> Daily Missions
@@ -111,9 +111,9 @@ const QuestCenter = () => {
                </div>
             </div>
 
-            <div className="flex-col gap-4">
+            <div className="flex flex-col gap-6">
               {DUMMY_QUESTS.map(quest => (
-                <div key={quest.id} className="nfm-glass-card--interactive p-4" style={{ background: 'var(--surface-lowest)', borderRadius: 'var(--radius-lg)', borderLeft: `4px solid ${quest.status === 'CLAIMABLE' ? 'var(--neon-cyan)' : quest.status === 'COMPLETED' ? 'var(--success)' : 'rgba(255,255,255,0.05)'}` }}>
+                <div key={quest.id} className="nfm-glass-card--interactive p-6" style={{ background: 'var(--surface-lowest)', borderRadius: 'var(--radius-lg)', borderLeft: `6px solid ${quest.status === 'CLAIMABLE' ? 'var(--neon-cyan)' : quest.status === 'COMPLETED' ? 'var(--success)' : 'rgba(255,255,255,0.05)'}` }}>
                   <div className="flex items-center justify-between wrap gap-4">
                     <div className="flex gap-4" style={{ flex: 1, minWidth: '300px' }}>
                        <div className={`p-3 rounded-xl bg-black-20 text-${quest.id.includes('sh') ? 'purple' : quest.id.includes('ai') ? 'pink' : 'cyan'}`}>
@@ -157,10 +157,10 @@ const QuestCenter = () => {
         </div>
 
         {/* Player Tier & Progression Sidebar */}
-        <div className="flex-col gap-6" style={{ flex: '1 1 350px' }}>
+        <div className="flex flex-col gap-8" style={{ flex: '1 1 350px' }}>
           
           {/* Rank Card */}
-          <div className="nfm-glass-card p-6 text-center">
+          <div className="nfm-glass-card p-6 text-center" style={{ marginBottom: 0 }}>
             <h3 className="text-xs text-muted uppercase tracking-widest mb-6 flex items-center justify-center gap-2">
               <Shield size={14} className="text-purple" /> Agent Standing
             </h3>
@@ -203,34 +203,34 @@ const QuestCenter = () => {
           </div>
 
           {/* Active Multiplier Card */}
-          <div className="nfm-glass-card--glow-pink p-5 border border-white-05">
-             <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 rounded-lg bg-pink-10 text-pink">
-                   <Flame size={20} />
+          <div className="nfm-glass-card--glow-pink p-6 border border-white-05" style={{ marginBottom: 0 }}>
+             <div className="flex items-center gap-4 mb-5">
+                <div className="p-3 rounded-lg bg-pink-10 text-pink">
+                   <Flame size={24} />
                 </div>
-                <div>
+                <div className="text-left">
                    <div className="text-xs font-bold text-primary">{streakDays}-Day Hot Streak</div>
-                   <div className="text-10px text-pink">{activeMultiplier.toFixed(1)}x Multiplier Active</div>
+                   <div className="text-11px text-pink">{activeMultiplier.toFixed(1)}x Multiplier Active</div>
                 </div>
              </div>
-             <p className="text-10px text-muted">Maintain your daily activity. <span className="text-pink">{nextMultiplierLabel}</span>.</p>
+             <p className="text-10px text-muted leading-relaxed">Maintain your daily activity. <span className="text-pink">{nextMultiplierLabel}</span>.</p>
           </div>
 
-          <div className="nfm-glass-card--interactive p-6 border border-white-05" onClick={() => navigate('/mystery')}>
-             <div className="flex justify-between items-start mb-2">
-                <h3 className="text-md text-gold font-bold flex items-center gap-2">
-                   <Gift size={18} /> extraction pool
-                </h3>
-                <ChevronRight size={16} className="text-muted" />
+          <div className="nfm-glass-card--interactive p-8 border border-white-05" onClick={() => navigate('/mystery')} style={{ marginBottom: 0 }}>
+             <div className="flex justify-between items-start mb-4">
+                <h2 className="text-xl text-gold font-bold flex items-center gap-3">
+                   <Gift size={24} /> extraction pool
+                </h2>
+                <div className="p-1 rounded-full bg-white-05"><ChevronRight size={16} className="text-muted" /></div>
              </div>
-             <p className="text-xs text-secondary mb-4">
+             <p className="text-xs text-secondary mb-6 leading-relaxed">
                 Redeem mystery boxes with your earned NVC to unlock rare AI Brain modules.
              </p>
-             <div className="flex gap-1">
+             <div className="flex gap-2">
                 {[1, 2, 3].map(i => (
-                   <div key={i} className="h-1 flex-1 bg-gold opacity-30 rounded-full"></div>
+                   <div key={i} className="h-1.5 flex-1 bg-gold opacity-30 rounded-full"></div>
                 ))}
-                <div className="h-1 flex-1 bg-surface-lowest rounded-full"></div>
+                <div className="h-1.5 flex-1 bg-surface-lowest rounded-full"></div>
              </div>
           </div>
 
