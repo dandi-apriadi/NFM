@@ -1,0 +1,244 @@
+import { Target, Gift, Zap, Shield, ChevronRight, ArrowRight, Trophy, Flame, Network, Cpu, ShieldCheck, Activity } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAppData } from '../context/AppDataContext';
+import { appClaimQuest } from '../api/client';
+
+const QuestCenter = () => {
+  const navigate = useNavigate();
+    const { data, refresh, notifySuccess, notifyError } = useAppData();
+   const DUMMY_QUESTS = data.quests;
+   const [nowMs, setNowMs] = useState(() => Date.now());
+
+   useEffect(() => {
+      const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+      return () => window.clearInterval(timer);
+   }, []);
+
+   const completedQuests = useMemo(
+      () => DUMMY_QUESTS.filter((quest) => quest.status === 'COMPLETED'),
+      [DUMMY_QUESTS],
+   );
+   const totalRewardsNvc = useMemo(
+      () => completedQuests.reduce((sum, quest) => sum + quest.rewardNVC, 0),
+      [completedQuests],
+   );
+   const streakDays = Number(data.user_profile.feedbackCount || 0);
+   const reputation = Number(data.user_profile.reputation || 0);
+
+   const latestBlockTs = data.blocks[0]?.timestamp ?? 0;
+   const nextRefreshTs = latestBlockTs > 0 ? latestBlockTs + 5 * 60 * 1000 : 0;
+   const secToRefresh = nextRefreshTs > 0 ? Math.max(0, Math.floor((nextRefreshTs - nowMs) / 1000)) : 0;
+   const refreshCountdown = nextRefreshTs > 0
+      ? `${Math.floor(secToRefresh / 3600).toString().padStart(2, '0')}:${Math.floor((secToRefresh % 3600) / 60).toString().padStart(2, '0')}:${(secToRefresh % 60).toString().padStart(2, '0')}`
+      : '--:--:--';
+
+   const nextRankXp = Math.max(1000, Math.ceil(reputation / 1000) * 1000);
+   const rankProgressPct = nextRankXp > 0 ? Math.min(100, Math.round((reputation / nextRankXp) * 100)) : 0;
+   const agentLevel = Math.max(1, Math.floor(reputation / 600) + 1);
+   const tierLabel = agentLevel >= 15 ? 'Tier 3 Prime' : agentLevel >= 8 ? 'Tier 2 Elite' : 'Tier 1 Initiate';
+   const rankTitle = agentLevel >= 15 ? 'Mesh Architect' : agentLevel >= 8 ? 'Validator Agent' : 'Mesh Initiate';
+   const stabilityIndex = DUMMY_QUESTS.length > 0
+      ? Math.round((completedQuests.length / DUMMY_QUESTS.length) * 100)
+      : 0;
+   const activeMultiplier = streakDays >= 14 ? 1.8 : streakDays >= 7 ? 1.5 : streakDays >= 3 ? 1.2 : 1;
+   const nextMultiplierLabel = streakDays >= 14 ? 'Max multiplier reached' : streakDays >= 7 ? 'Reach Day 14 for 1.8x' : streakDays >= 3 ? 'Reach Day 7 for 1.5x' : 'Reach Day 3 for 1.2x';
+
+   const handleClaim = async (questId: string) => {
+      try {
+         await appClaimQuest(questId, data.user_profile.nfmAddress);
+         await refresh();
+         notifySuccess('Quest claimed');
+      } catch (e) {
+         notifyError(e instanceof Error ? e.message : 'Claim failed');
+      }
+   };
+
+  return (
+    <div className="animate-in pb-12">
+      {/* Header with Rank Badges */}
+      <div className="flex items-center justify-between wrap gap-4" style={{ marginBottom: 'var(--space-10)' }}>
+        <div>
+          <h1 className="text-cyan flex items-center gap-2"><Target /> Core Quest Center</h1>
+          <p className="text-muted text-sm mt-1">Contribute to the NFM mesh, train local AI models, and secure the network to earn NVC.</p>
+        </div>
+        <div className="flex gap-4">
+          <div className="nfm-badge nfm-badge--purple">
+                  <div className="nfm-badge__dot"></div> {rankTitle} (Lvl {agentLevel})
+          </div>
+          <div className="nfm-badge nfm-badge--cyan">
+                  <div className="nfm-badge__dot"></div> {reputation.toLocaleString()} XP
+          </div>
+        </div>
+      </div>
+
+      {/* Rewards & Performance Stats Grid */}
+      <div className="grid" style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(4, 1fr)', 
+        gap: 'var(--space-6)', 
+        marginBottom: 'var(--space-10)' 
+      }}>
+        {[
+               { label: 'Total Rewards', value: `${totalRewardsNvc.toFixed(1)} NVC`, icon: <Trophy size={16}/>, color: 'gold' },
+               { label: 'Missions Concluded', value: String(completedQuests.length), icon: <Activity size={16}/>, color: 'cyan' },
+               { label: 'Active Streak', value: `${streakDays} Days`, icon: <Flame size={16}/>, color: 'pink' },
+               { label: 'Reputation', value: reputation.toLocaleString(), icon: <Shield size={16}/>, color: 'purple' },
+        ].map((stat, idx) => (
+          <div key={idx} className="nfm-glass-card" style={{ padding: 'var(--space-6)', marginBottom: 0 }}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`p-2 rounded-lg bg-surface-lowest text-${stat.color}`}>
+                {stat.icon}
+              </div>
+              <span className="text-10px text-muted uppercase tracking-widest">{stat.label}</span>
+            </div>
+            <div className="text-2xl font-display text-primary">{stat.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-10 wrap" style={{ flexWrap: 'wrap' }}>
+        
+        {/* Main Mission Hub */}
+        <div className="flex flex-col gap-6" style={{ flex: '2 1 600px' }}>
+          <div className="nfm-glass-card nfm-glass-card--glow-cyan p-10" style={{ border: '1px solid rgba(0, 245, 255, 0.1)', marginBottom: 0 }}>
+            <div className="flex justify-between items-center mb-6">
+               <h2 className="text-xl text-primary flex items-center gap-3">
+                  <Zap className="text-gold" fill="currentColor" /> Daily Missions
+               </h2>
+               <div className="text-10px text-muted font-mono bg-white-05 px-2 py-1 rounded">
+                  Refreshes in: <span className="text-cyan">{refreshCountdown}</span>
+               </div>
+            </div>
+
+            <div className="flex flex-col gap-6">
+              {DUMMY_QUESTS.map(quest => (
+                <div key={quest.id} className="nfm-glass-card--interactive p-6" style={{ background: 'var(--surface-lowest)', borderRadius: 'var(--radius-lg)', borderLeft: `6px solid ${quest.status === 'CLAIMABLE' ? 'var(--neon-cyan)' : quest.status === 'COMPLETED' ? 'var(--success)' : 'rgba(255,255,255,0.05)'}` }}>
+                  <div className="flex items-center justify-between wrap gap-4">
+                    <div className="flex gap-4" style={{ flex: 1, minWidth: '300px' }}>
+                       <div className={`p-3 rounded-xl bg-black-20 text-${quest.id.includes('sh') ? 'purple' : quest.id.includes('ai') ? 'pink' : 'cyan'}`}>
+                          {quest.id.includes('sh') ? <ShieldCheck size={20} /> : quest.id.includes('ai') ? <Cpu size={20} /> : <Network size={20} />}
+                       </div>
+                       <div style={{ flex: 1 }}>
+                          <div className="flex items-center gap-2 mb-1">
+                             <span className="font-bold text-primary">{quest.title}</span>
+                             {quest.status === 'CLAIMABLE' && <span className="nfm-badge nfm-badge--cyan text-9px uppercase font-bold py-0.5 px-1.5 h-auto">Ready</span>}
+                             {quest.status === 'COMPLETED' && <span className="nfm-badge nfm-badge--success text-9px uppercase font-bold py-0.5 px-1.5 h-auto">Claimed</span>}
+                          </div>
+                          <p className="text-xs text-muted mb-4">{quest.description}</p>
+                          <div className="flex items-center gap-4">
+                             <div className="nfm-progress" style={{ flex: 1, maxWidth: '240px', height: '6px', background: 'rgba(255,255,255,0.05)' }}>
+                                <div className={`nfm-progress__fill nfm-progress__fill--${quest.status === 'COMPLETED' ? 'success' : 'cyan'}`} style={{ width: `${(quest.progress / quest.total) * 100}%` }}></div>
+                             </div>
+                             <span className="text-10px font-mono text-muted">{quest.progress}/{quest.total}</span>
+                          </div>
+                       </div>
+                    </div>
+                    
+                    <div className="flex-col items-end gap-2" style={{ minWidth: '140px' }}>
+                       <div className="font-display text-lg text-gold">+{quest.rewardNVC.toFixed(1)} <span className="text-xs">NVC</span></div>
+                       <button 
+                         className={`nfm-btn nfm-btn--sm w-full font-bold uppercase tracking-widest text-10px ${quest.status === 'CLAIMABLE' ? 'nfm-btn--primary shadow-cyan' : 'nfm-btn--ghost opacity-50'}`}
+                                     onClick={() => handleClaim(quest.id)}
+                         disabled={quest.status !== 'CLAIMABLE'}
+                       >
+                         {quest.status === 'CLAIMABLE' ? 'Claim Reward' : quest.status === 'COMPLETED' ? 'Completed' : 'Processing'}
+                       </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+                  <button className="nfm-btn-more mt-8" onClick={() => navigate('/explorer')}>
+              <ArrowRight size={14} /> Full Mission Archive
+            </button>
+          </div>
+        </div>
+
+        {/* Player Tier & Progression Sidebar */}
+        <div className="flex flex-col gap-8" style={{ flex: '1 1 350px' }}>
+          
+          {/* Rank Card */}
+          <div className="nfm-glass-card p-6 text-center" style={{ marginBottom: 0 }}>
+            <h3 className="text-xs text-muted uppercase tracking-widest mb-6 flex items-center justify-center gap-2">
+              <Shield size={14} className="text-purple" /> Agent Standing
+            </h3>
+            
+            <div className="relative inline-block mb-4">
+               <div className="w-24 h-24 rounded-full border-2 border-purple p-1 relative z-10 bg-surface-lowest">
+                  <div className="w-full h-full rounded-full bg-gradient-to-tr from-purple-90 to-cyan-20 flex items-center justify-center">
+                     <ShieldCheck size={40} className="text-purple" />
+                  </div>
+               </div>
+               <div className="absolute inset-0 bg-glow-purple--soft rounded-full -z-10 animate-pulse"></div>
+            </div>
+
+            <div className="text-2xl font-display text-primary">{rankTitle}</div>
+            <div className="text-xs text-purple font-bold mb-6">{tierLabel}</div>
+
+            <div className="bg-surface-lowest p-4 rounded-xl mb-6 text-left border border-white-05">
+               <div className="flex justify-between text-xs mb-2">
+                  <span className="text-muted">Stability Index</span>
+                  <span className="text-cyan">{stabilityIndex}%</span>
+               </div>
+               <div className="nfm-progress" style={{ height: '4px' }}>
+                  <div className="nfm-progress__fill nfm-progress__fill--cyan" style={{ width: `${stabilityIndex}%` }}></div>
+               </div>
+            </div>
+
+            <div className="text-left">
+               <div className="flex justify-between text-10px text-muted mb-2 uppercase tracking-tighter">
+                  <span>Next Rank: Mesh Architect</span>
+                  <span>{rankProgressPct}%</span>
+               </div>
+               <div className="nfm-progress" style={{ height: '8px' }}>
+                  <div className="nfm-progress__fill nfm-progress__fill--purple" style={{ width: `${rankProgressPct}%` }}></div>
+               </div>
+               <div className="flex justify-between text-10px font-mono text-muted mt-2">
+                  <span>{reputation.toLocaleString()} XP</span>
+                  <span>{nextRankXp.toLocaleString()} XP</span>
+               </div>
+            </div>
+          </div>
+
+          {/* Active Multiplier Card */}
+          <div className="nfm-glass-card--glow-pink p-6 border border-white-05" style={{ marginBottom: 0 }}>
+             <div className="flex items-center gap-4 mb-5">
+                <div className="p-3 rounded-lg bg-pink-10 text-pink">
+                   <Flame size={24} />
+                </div>
+                <div className="text-left">
+                   <div className="text-xs font-bold text-primary">{streakDays}-Day Hot Streak</div>
+                   <div className="text-11px text-pink">{activeMultiplier.toFixed(1)}x Multiplier Active</div>
+                </div>
+             </div>
+             <p className="text-10px text-muted leading-relaxed">Maintain your daily activity. <span className="text-pink">{nextMultiplierLabel}</span>.</p>
+          </div>
+
+          <div className="nfm-glass-card--interactive p-8 border border-white-05" onClick={() => navigate('/mystery')} style={{ marginBottom: 0 }}>
+             <div className="flex justify-between items-start mb-4">
+                <h2 className="text-xl text-gold font-bold flex items-center gap-3">
+                   <Gift size={24} /> extraction pool
+                </h2>
+                <div className="p-1 rounded-full bg-white-05"><ChevronRight size={16} className="text-muted" /></div>
+             </div>
+             <p className="text-xs text-secondary mb-6 leading-relaxed">
+                Redeem mystery boxes with your earned NVC to unlock rare AI Brain modules.
+             </p>
+             <div className="flex gap-2">
+                {[1, 2, 3].map(i => (
+                   <div key={i} className="h-1.5 flex-1 bg-gold opacity-30 rounded-full"></div>
+                ))}
+                <div className="h-1.5 flex-1 bg-surface-lowest rounded-full"></div>
+             </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+export default QuestCenter;

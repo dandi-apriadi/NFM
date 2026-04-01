@@ -22,6 +22,8 @@ dist/
 
 # Test scripts (local development only)
 test_*.ps1
+artifacts/
+.gemini/
 
 # OS
 .DS_Store

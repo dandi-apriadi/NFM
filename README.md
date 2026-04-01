@@ -55,6 +55,77 @@ cd NFM/apps/node-runner
 .\run.ps1
 ```
 
+### Direct Core Run (from repo root)
+If you prefer running the blockchain core directly, use one of these commands from `NFM` root:
+```powershell
+cargo run --manifest-path core/blockchain/Cargo.toml --release
+```
+
+Or use helper script:
+```powershell
+.\scripts\run_blockchain.ps1
+```
+
+Optional ports:
+```powershell
+.\scripts\run_blockchain.ps1 -ApiPort 3001 -P2PPort 9001
+```
+
+### API Health Check (fail-fast)
+After node startup, validate required API endpoints:
+```powershell
+.\scripts\blockchain_healthcheck.ps1
+```
+
+Custom timeout/base URL:
+```powershell
+.\scripts\blockchain_healthcheck.ps1 -BaseUrl http://127.0.0.1:3001 -TimeoutSec 45
+```
+
+### One-Command Bootstrap (node + health check)
+Start blockchain node and block until API endpoints are healthy:
+```powershell
+.\scripts\bootstrap_stack.ps1
+```
+
+Start explorer dev server after health check succeeds:
+```powershell
+.\scripts\bootstrap_stack.ps1 -StartExplorer
+```
+If `apps/nfm-explorer/node_modules` is missing, the script will run `npm install` automatically before starting explorer.
+
+Run quick verification and auto-stop node after check:
+```powershell
+.\scripts\bootstrap_stack.ps1 -StopNodeAfterCheck
+```
+
+### End-to-End Integration Smoke
+Run full integration smoke in one command (start node -> health check -> app actions smoke -> cleanup):
+```powershell
+.\scripts\integration_e2e_smoke.ps1
+```
+
+Increase smoke iteration count:
+```powershell
+.\scripts\integration_e2e_smoke.ps1 -SmokeRepeat 2
+```
+
+Write smoke summary artifacts to a custom folder:
+```powershell
+.\scripts\integration_e2e_smoke.ps1 -ArtifactDir artifacts/integration-smoke
+```
+
+### CI Integration Smoke
+GitHub Actions workflow is available at:
+`.github/workflows/integration-smoke.yml`
+
+It runs on Windows and executes the same automation flow:
+- start node
+- health-check endpoints
+- app actions smoke
+- cleanup node process
+- upload run artifacts (`artifacts/integration-smoke/summary.json` and `summary.txt`)
+
 ### Opening the Explorer
 ```bash
 cd ../nfm-explorer

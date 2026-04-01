@@ -5,7 +5,7 @@ use std::net::{TcpListener, TcpStream};
 use std::io::{Write, BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::collections::{HashMap, HashSet};
 
 /// Batas keamanan P2P [K-02]
@@ -137,6 +137,47 @@ pub struct Peer {
     pub port: u16,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerHealth {
+    pub endpoint: String,
+    pub healthy: bool,
+    pub latency_ms: u128,
+    pub score: u8,
+    pub quality: String,
+    pub error: Option<String>,
+}
+
+fn classify_peer_quality(healthy: bool, latency_ms: u128, had_error: bool) -> (u8, String) {
+    if !healthy || had_error {
+        return (0, "critical".to_string());
+    }
+
+    // Base score from connectivity, then penalize by latency buckets.
+    let mut score: i32 = 100;
+    if latency_ms > 800 {
+        score -= 60;
+    } else if latency_ms > 500 {
+        score -= 45;
+    } else if latency_ms > 300 {
+        score -= 30;
+    } else if latency_ms > 150 {
+        score -= 15;
+    }
+
+    let bounded = score.clamp(1, 100) as u8;
+    let quality = if bounded >= 80 {
+        "excellent"
+    } else if bounded >= 60 {
+        "good"
+    } else if bounded >= 40 {
+        "degraded"
+    } else {
+        "poor"
+    };
+
+    (bounded, quality.to_string())
+}
+
 impl Peer {
     pub fn endpoint(&self) -> String {
         format!("{}:{}", self.address, self.port)
@@ -166,6 +207,9 @@ impl P2PNode {
     /// Tambah peer secara manual (dengan batas MAX_PEERS)
     pub fn add_peer(&self, address: &str, port: u16) -> bool {
         let mut peers = self.peers.lock().unwrap();
+        if peers.iter().any(|p| p.address == address && p.port == port) {
+            return false;
+        }
         if peers.len() >= MAX_PEERS {
             println!("[P2P] Peer limit reached ({}), rejecting {}:{}", MAX_PEERS, address, port);
             return false;
@@ -173,6 +217,204 @@ impl P2PNode {
         peers.push(Peer { address: address.to_string(), port });
         println!("[P2P] Added peer: {}:{} ({}/{})", address, port, peers.len(), MAX_PEERS);
         true
+    }
+
+    fn merge_discovered_peers(&self, discovered: Vec<Peer>) -> usize {
+        let mut peers = self.peers.lock().unwrap();
+        let mut added = 0;
+
+        for candidate in discovered {
+            if peers.len() >= MAX_PEERS {
+                break;
+            }
+
+            // Hindari menambah diri sendiri
+            if candidate.port == self.port
+                && (candidate.address == "127.0.0.1"
+                    || candidate.address == "localhost"
+                    || candidate.address == self.node_address)
+            {
+                continue;
+            }
+
+            if !peers
+                .iter()
+                .any(|p| p.address == candidate.address && p.port == candidate.port)
+            {
+                peers.push(candidate);
+                added += 1;
+            }
+        }
+
+        added
+    }
+
+    /// Bootstrap gossip discovery dari daftar seed peers.
+    pub fn bootstrap_gossip(&self, seeds: &[String]) {
+        for seed in seeds {
+            let trimmed = seed.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            let mut parts = trimmed.split(':');
+            let address = parts.next().unwrap_or("").trim();
+            let port = parts
+                .next()
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(0);
+
+            if address.is_empty() || port == 0 {
+                println!("[P2P] Ignoring invalid seed peer: {}", seed);
+                continue;
+            }
+
+            let _ = self.add_peer(address, port);
+        }
+
+        let peers = self.peers.lock().unwrap().clone();
+        for peer in peers {
+            let hello = NetMessage::Hello {
+                address: self.node_address.clone(),
+                port: self.port,
+            };
+            match Self::send_message(&peer, &hello) {
+                Ok(response) => {
+                    if let Ok(NetMessage::PeerExchange(received)) = serde_json::from_str::<NetMessage>(&response) {
+                        let added = self.merge_discovered_peers(received);
+                        if added > 0 {
+                            println!("[P2P] Added {} discovered peers from {}", added, peer.endpoint());
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("[P2P] Seed handshake failed with {}: {}", peer.endpoint(), e);
+                }
+            }
+        }
+    }
+
+    fn is_chain_valid(candidate: &[Block]) -> bool {
+        if candidate.is_empty() {
+            return false;
+        }
+
+        if !candidate[0].is_valid() {
+            return false;
+        }
+
+        for idx in 1..candidate.len() {
+            if Block::validate_block(&candidate[idx], &candidate[idx - 1], 2).is_err() {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Ambil chain terpanjang yang valid dari peers yang terhubung.
+    pub fn sync_longest_chain(&self) -> Result<usize, String> {
+        let peers = self.peers.lock().unwrap().clone();
+        if peers.is_empty() {
+            return Ok(self.chain.lock().unwrap().len());
+        }
+
+        let current_chain = self.chain.lock().unwrap().clone();
+        let mut best_chain = current_chain;
+
+        for peer in peers {
+            if let Ok(candidate) = self.sync_from_peer(&peer) {
+                if candidate.len() > best_chain.len() && Self::is_chain_valid(&candidate) {
+                    best_chain = candidate;
+                }
+            }
+        }
+
+        let best_len = best_chain.len();
+        let mut chain_lock = self.chain.lock().unwrap();
+        if best_len > chain_lock.len() {
+            *chain_lock = best_chain;
+            println!("[P2P] Chain updated from gossip sync: {} blocks", best_len);
+        }
+
+        Ok(chain_lock.len())
+    }
+
+    /// Probe semua peer dengan Ping/Pong untuk health telemetry.
+    pub fn probe_peers(&self) -> Vec<PeerHealth> {
+        let peers = self.peers.lock().unwrap().clone();
+        let mut report = Vec::with_capacity(peers.len());
+
+        for peer in peers {
+            let started = Instant::now();
+            match Self::send_message(&peer, &NetMessage::Ping) {
+                Ok(resp) if resp == "PONG" => {
+                    let latency_ms = started.elapsed().as_millis();
+                    let (score, quality) = classify_peer_quality(true, latency_ms, false);
+                    report.push(PeerHealth {
+                        endpoint: peer.endpoint(),
+                        healthy: true,
+                        latency_ms,
+                        score,
+                        quality,
+                        error: None,
+                    });
+                }
+                Ok(resp) => {
+                    let latency_ms = started.elapsed().as_millis();
+                    let (score, quality) = classify_peer_quality(false, latency_ms, true);
+                    report.push(PeerHealth {
+                        endpoint: peer.endpoint(),
+                        healthy: false,
+                        latency_ms,
+                        score,
+                        quality,
+                        error: Some(format!("unexpected response: {}", resp)),
+                    });
+                }
+                Err(e) => {
+                    let latency_ms = started.elapsed().as_millis();
+                    let (score, quality) = classify_peer_quality(false, latency_ms, true);
+                    report.push(PeerHealth {
+                        endpoint: peer.endpoint(),
+                        healthy: false,
+                        latency_ms,
+                        score,
+                        quality,
+                        error: Some(e),
+                    });
+                }
+            }
+        }
+
+        report
+    }
+
+    /// Hapus peer yang terdeteksi unhealthy dari daftar aktif.
+    pub fn prune_unhealthy_peers(&self, report: &[PeerHealth]) -> usize {
+        let unhealthy: HashSet<String> = report
+            .iter()
+            .filter(|p| !p.healthy)
+            .map(|p| p.endpoint.clone())
+            .collect();
+
+        if unhealthy.is_empty() {
+            return 0;
+        }
+
+        let mut peers = self.peers.lock().unwrap();
+        let before = peers.len();
+        peers.retain(|peer| !unhealthy.contains(&peer.endpoint()));
+        before.saturating_sub(peers.len())
+    }
+
+    /// Auto-reconnect policy sederhana: jika peer aktif kosong, bootstrap ulang dari seed.
+    pub fn auto_reconnect_if_needed(&self, seeds: &[String]) -> bool {
+        if self.peer_count() == 0 && !seeds.is_empty() {
+            self.bootstrap_gossip(seeds);
+            return true;
+        }
+        false
     }
 
     /// Kirim pesan ke satu peer (dengan timeout)
@@ -223,6 +465,14 @@ impl P2PNode {
             },
             Err(e) => {
                 println!("[P2P] Failed to bind {}: {}", bind_addr, e);
+                let lower = e.to_string().to_lowercase();
+                if lower.contains("address already in use")
+                    || lower.contains("only one usage of each socket address")
+                    || lower.contains("os error 10048")
+                {
+                    println!("[P2P][HINT] Port {} is already in use. Another node instance may still be running.", self.port);
+                    println!("[P2P][HINT] Stop the existing process or restart via node-runner script with --restart.");
+                }
                 return;
             }
         };
@@ -386,12 +636,25 @@ impl P2PNode {
 mod tests {
     use super::*;
 
+    fn pick_free_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
+        listener.local_addr().expect("read local addr").port()
+    }
+
     #[test]
     fn test_peer_management() {
         let node = P2PNode::new("nfm_test_node", 9000);
         node.add_peer("127.0.0.1", 9001);
         node.add_peer("127.0.0.1", 9002);
         assert_eq!(node.peer_count(), 2);
+    }
+
+    #[test]
+    fn test_add_peer_prevents_duplicate() {
+        let node = P2PNode::new("nfm_test_node", 9000);
+        assert!(node.add_peer("127.0.0.1", 9001));
+        assert!(!node.add_peer("127.0.0.1", 9001));
+        assert_eq!(node.peer_count(), 1);
     }
 
     #[test]
@@ -468,6 +731,94 @@ mod tests {
         banlist.manual_ban("bad_peer");
         assert!(banlist.is_banned("bad_peer"));
         assert!(!banlist.is_banned("good_peer"));
+    }
+
+    #[test]
+    fn test_chain_validation_rejects_broken_previous_hash() {
+        let mut b0 = Block::new(0, "genesis".to_string(), "".to_string());
+        b0.mine(2);
+        let mut b1 = Block::new(1, "b1".to_string(), b0.hash.clone());
+        b1.mine(2);
+        let mut b2 = Block::new(2, "b2".to_string(), "invalid_prev".to_string());
+        b2.mine(2);
+
+        let chain = vec![b0, b1, b2];
+        assert!(!P2PNode::is_chain_valid(&chain));
+    }
+
+    #[test]
+    fn test_probe_peers_reports_health() {
+        let port = pick_free_port();
+        let server = P2PNode::new("nfm_probe_server", port);
+        server.start_listener();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+
+        let client = P2PNode::new("nfm_probe_client", pick_free_port());
+        assert!(client.add_peer("127.0.0.1", port));
+
+        let health = client.probe_peers();
+        assert_eq!(health.len(), 1);
+        assert!(health[0].healthy);
+    }
+
+    #[test]
+    fn test_bootstrap_gossip_discovers_additional_peer() {
+        let port_b = pick_free_port();
+        let port_c = pick_free_port();
+
+        let node_b = P2PNode::new("nfm_node_b", port_b);
+        let node_c = P2PNode::new("nfm_node_c", port_c);
+
+        node_b.start_listener();
+        node_c.start_listener();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+
+        // Node B sudah mengetahui node C, nanti di-exchange saat node A bootstrap ke B.
+        assert!(node_b.add_peer("127.0.0.1", port_c));
+
+        let port_a = pick_free_port();
+        let node_a = P2PNode::new("nfm_node_a", port_a);
+        node_a.bootstrap_gossip(&[format!("127.0.0.1:{}", port_b)]);
+
+        let discovered = node_a.peers.lock().unwrap().clone();
+        assert!(
+            discovered.iter().any(|p| p.port == port_b)
+                && discovered.iter().any(|p| p.port == port_c),
+            "expected node A to know seed B and exchanged peer C"
+        );
+    }
+
+    #[test]
+    fn test_sync_longest_chain_from_connected_peer() {
+        let server_port = pick_free_port();
+        let server = P2PNode::new("nfm_server", server_port);
+
+        let mut b0 = Block::new(0, "genesis".to_string(), "".to_string());
+        b0.mine(2);
+        let mut b1 = Block::new(1, "b1".to_string(), b0.hash.clone());
+        b1.mine(2);
+        let mut b2 = Block::new(2, "b2".to_string(), b1.hash.clone());
+        b2.mine(2);
+
+        {
+            let mut chain = server.chain.lock().unwrap();
+            *chain = vec![b0.clone(), b1.clone(), b2.clone()];
+        }
+        server.start_listener();
+        std::thread::sleep(std::time::Duration::from_millis(80));
+
+        let client_port = pick_free_port();
+        let client = P2PNode::new("nfm_client", client_port);
+        {
+            let mut chain = client.chain.lock().unwrap();
+            *chain = vec![b0.clone()];
+        }
+
+        assert!(client.add_peer("127.0.0.1", server_port));
+        let synced_len = client.sync_longest_chain().expect("sync longest chain");
+
+        assert_eq!(synced_len, 3);
+        assert_eq!(client.chain.lock().unwrap().len(), 3);
     }
 }
 

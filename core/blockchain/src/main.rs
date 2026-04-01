@@ -6,6 +6,8 @@ mod item;
 mod auction;
 mod security;
 mod governance;
+mod governance_api;
+mod governance_storage;
 mod network;
 mod transfer;
 mod api;
@@ -26,10 +28,13 @@ use crate::storage::{BlockStorage, WalletStorage};
 use crate::transfer::WalletEngine;
 use crate::admin::AdminEngine;
 use crate::wallet::CryptoWallet;
+use crate::network::P2PNode;
 // use crate::storage::BlockStorage; // Removed duplicate
 use crate::contract::ContractEngine;
 use crate::mission::MissionEngine;
 use block::Block;
+use nfm_ai_engine::distributed_brain::{BrainSnapshot, GeoDistributedBrainDb, NodeMeta};
+use rand::Rng;
 use std::sync::{Arc, Mutex};
 
 struct Blockchain {
@@ -70,6 +75,14 @@ impl Blockchain {
         }
 
         Blockchain { chain, storage }
+    }
+
+    /// PHASE 11: Ambil rangkuman ekonomi dari block terakhir
+    fn get_last_economy_summary(&self) -> Option<crate::block::EconomySummary> {
+        self.chain.last().and_then(|block| {
+            let data: crate::block::BlockData = serde_json::from_str(&block.data).ok()?;
+            Some(data.economy)
+        })
     }
 
     fn create_genesis(&mut self, founder_address: &str) {
@@ -114,11 +127,12 @@ impl Blockchain {
         self.chain.last().expect("Chain should not be empty")
     }
 
-    fn get_epoch_reward(&self) -> f64 {
-        let height = self.chain.len() as u32;
-        let halvings = height / 420480;
+    fn get_epoch_reward(block_height: u64) -> f64 {
+        let base_reward = 100.0;
+        let halving_interval = 420_000;
+        let halvings = block_height / halving_interval;
         if halvings >= 64 { return 0.0; }
-        100.0 / (2.0f64.powi(halvings as i32))
+        base_reward / (2.0f64.powi(halvings as i32))
     }
 }
 
@@ -136,10 +150,25 @@ fn main() {
     let mut blockchain = Blockchain::new(Some(db_path));
     
     let mut pool = EconomyPool::new();
+    if let Some(eco) = blockchain.get_last_economy_summary() {
+        pool.total_fees_collected = eco.fees_collected;
+        pool.total_burned = eco.burned;
+        println!("[ECONOMY] Restored state from last block: fees={:.4}, burned={:.4}", 
+                 pool.total_fees_collected, pool.total_burned);
+    }
     let mut reward_engine = RewardEngine::new();
     let mut registry = CouponRegistry::new();
     let mut security = NexusSecurity::new();
-    let mut gov = GovernanceEngine::new();
+    let governance_db_path = format!("{}_governance.db", db_path);
+    let gov_storage = match crate::governance_storage::GovernanceStorage::open(&governance_db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("[GOV][WARN] Gagal membuka governance storage: {}", e);
+            // Fallback ke in-memory jika gagal, tapi beri peringatan keras
+            crate::governance_storage::GovernanceStorage::open("temp_gov.db").unwrap()
+        }
+    };
+    let mut gov = GovernanceEngine::with_storage(gov_storage);
     let mut admin_engine = AdminEngine::new();
     let mut contracts = ContractEngine::new();
     let missions = MissionEngine::new();
@@ -214,6 +243,92 @@ fn main() {
     }
 
     // =============================================
+    // PHASE 5: P2P GOSSIP BOOTSTRAP
+    // =============================================
+    println!("\n--- PHASE 5: P2P GOSSIP ---");
+    let p2p_node = P2PNode::new(&founder.address, node_config.p2p_port);
+    let shared_p2p_seeds = Arc::new(Mutex::new(node_config.p2p_seed_peers.clone()));
+    let shared_p2p_banlist = Arc::new(Mutex::new(Vec::<String>::new()));
+    let shared_p2p_status = Arc::new(Mutex::new(serde_json::json!({
+        "gossip_enabled": node_config.p2p_gossip_enabled,
+        "listening_port": node_config.p2p_port,
+        "peer_count": 0,
+        "healthy_peers": 0,
+        "unhealthy_peers": 0,
+        "known_peers": [],
+        "peer_health": [],
+        "seed_count": node_config.p2p_seed_peers.len(),
+        "ban_count": 0,
+        "banned_peers": [],
+        "reconnect_attempts": 0,
+        "reconnect_backoff_secs": 1,
+        "next_reconnect_unix": 0,
+        "last_reconnect_unix": 0,
+        "last_sync_unix": chrono::Utc::now().timestamp(),
+        "chain_blocks": blockchain.chain.len(),
+        "status": if node_config.p2p_gossip_enabled { "starting" } else { "disabled" }
+    })));
+    let reconnect_attempts = Arc::new(Mutex::new(0u64));
+    let reconnect_backoff_secs = Arc::new(Mutex::new(1u64));
+    let reconnect_next_attempt_unix = Arc::new(Mutex::new(0i64));
+    {
+        let mut chain_lock = p2p_node.chain.lock().unwrap();
+        *chain_lock = blockchain.chain.clone();
+    }
+
+    if node_config.p2p_gossip_enabled {
+        p2p_node.start_listener();
+
+        let startup_seeds = shared_p2p_seeds.lock().unwrap().clone();
+        if !startup_seeds.is_empty() {
+            println!(
+                "[P2P] Bootstrapping gossip with {} seed peers",
+                startup_seeds.len()
+            );
+            p2p_node.bootstrap_gossip(&startup_seeds);
+
+            if let Ok(best_len) = p2p_node.sync_longest_chain() {
+                if best_len > blockchain.chain.len() {
+                    let synced_chain = p2p_node.chain.lock().unwrap().clone();
+                    blockchain.chain = synced_chain;
+                    println!("[P2P] Local chain synced from network ({} blocks)", best_len);
+                }
+            }
+        }
+
+        {
+            let known_peers: Vec<String> = p2p_node
+                .peers
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|p| p.endpoint())
+                .collect();
+            *shared_p2p_status.lock().unwrap() = serde_json::json!({
+                "gossip_enabled": true,
+                "listening_port": node_config.p2p_port,
+                "peer_count": known_peers.len(),
+                "healthy_peers": known_peers.len(),
+                "unhealthy_peers": 0,
+                "known_peers": known_peers,
+                "peer_health": [],
+                "seed_count": shared_p2p_seeds.lock().unwrap().len(),
+                "ban_count": shared_p2p_banlist.lock().unwrap().len(),
+                "banned_peers": shared_p2p_banlist.lock().unwrap().clone(),
+                "reconnect_attempts": *reconnect_attempts.lock().unwrap(),
+                "reconnect_backoff_secs": *reconnect_backoff_secs.lock().unwrap(),
+                "next_reconnect_unix": *reconnect_next_attempt_unix.lock().unwrap(),
+                "last_reconnect_unix": 0,
+                "last_sync_unix": chrono::Utc::now().timestamp(),
+                "chain_blocks": blockchain.chain.len(),
+                "status": "online"
+            });
+        }
+    } else {
+        println!("[P2P] Gossip disabled via NFM_P2P_GOSSIP=false");
+    }
+
+    // =============================================
     // PHASE 9: REST API & GAMIFIED DASHBOARD
     // =============================================
 
@@ -224,6 +339,7 @@ fn main() {
     let api_wallets = wallets.clone(); // Re-use the SAME SHARED state
     let api_fees = Arc::new(Mutex::new(pool.total_fees_collected));
     let api_burned = Arc::new(Mutex::new(pool.total_burned));
+    let api_reward_pool = Arc::new(Mutex::new(pool.reward_pool));
     let api_effects = Arc::new(Mutex::new(contracts.active_effects.clone()));
     let api_missions = Arc::new(Mutex::new(missions));
     let shared_staking = Arc::new(Mutex::new(contracts.staking_pool.clone()));
@@ -241,6 +357,41 @@ fn main() {
 
     let shared_mempool: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let shared_next_block = Arc::new(Mutex::new(chrono::Utc::now().timestamp() as u64 + 300));
+    let brain_snapshot_db_path = format!("{}_brain_snapshot.db", db_path);
+    let brain_snapshot_store = match sled::open(&brain_snapshot_db_path) {
+        Ok(db) => Some(db),
+        Err(e) => {
+            println!("[BRAIN] Snapshot DB unavailable (continuing in-memory): {}", e);
+            None
+        }
+    };
+    let shared_brain_db = Arc::new(Mutex::new(GeoDistributedBrainDb::new()));
+    {
+        let mut brain = shared_brain_db.lock().unwrap();
+        let mut restored = false;
+        if let Some(db) = brain_snapshot_store.as_ref() {
+            if let Ok(Some(bytes)) = db.get(b"brain_snapshot_v1") {
+                match serde_json::from_slice::<BrainSnapshot>(&bytes) {
+                    Ok(snapshot) => {
+                        brain.import_snapshot(snapshot);
+                        restored = true;
+                        println!(
+                            "[BRAIN] Snapshot restored from disk (nodes={}, records={})",
+                            brain.node_count(),
+                            brain.record_count()
+                        );
+                    }
+                    Err(e) => {
+                        println!("[BRAIN] Failed to decode snapshot (using fresh state): {}", e);
+                    }
+                }
+            }
+        }
+
+        if !restored && brain.node_count() == 0 {
+            brain.register_node(NodeMeta::new(&founder.address, "id", -6.2088, 106.8456));
+        }
+    }
 
     let api_state = api::ApiState {
         chain: api_chain.clone(),
@@ -248,6 +399,7 @@ fn main() {
         node_address: founder.address.clone(),
         total_fees: api_fees.clone(),
         total_burned: api_burned.clone(),
+        reward_pool: api_reward_pool.clone(),
         active_effects: api_effects.clone(),
         mission_engine: api_missions.clone(),
         staking_pool: shared_staking.clone(),
@@ -260,6 +412,17 @@ fn main() {
         aliases: api_aliases,
         mempool: shared_mempool.clone(),
         next_block_timestamp: shared_next_block.clone(),
+        user_settings: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        brain_db: shared_brain_db.clone(),
+        brain_tokens: Arc::new(Mutex::new(Vec::new())), // Whitelist tokens—empty means open access
+        status_cache: Arc::new(Mutex::new(None)),
+        p2p_status: shared_p2p_status.clone(),
+        p2p_seed_peers: shared_p2p_seeds.clone(),
+        p2p_ban_peers: shared_p2p_banlist.clone(),
+        auctions: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        auction_escrow: Arc::new(Mutex::new(crate::auction::EscrowVault::new())),
+        next_auction_id: Arc::new(Mutex::new(1)),
+        brain_snapshot_store: Arc::new(Mutex::new(brain_snapshot_store)),
     };
     api::start_api_server(api_state, node_config.api_port);
     println!("  Dashboard running at http://127.0.0.1:{}", node_config.api_port);
@@ -280,6 +443,7 @@ fn main() {
     let _last_auto_mine = std::time::Instant::now();
     let mut last_epoch_time = std::time::Instant::now();
     let _last_batch_mine = std::time::Instant::now(); // PHASE 20: Batch counter
+    let mut last_p2p_probe = std::time::Instant::now();
     // Fase 19: Bersihkan alamat malformed (ID yang terekam sebagai alamat)
     wallets.lock().unwrap().cleanup_malformed_wallets();
 
@@ -291,8 +455,8 @@ fn main() {
                  if let Some(ref s) = blockchain.storage { let _ = s.clear(); }
                  blockchain.chain.clear();
                  let genesis_data = crate::block::BlockData {
-                     transactions: vec!["GENESIS_REWARD: @founder (+500 NVC)".to_string()],
-                     rewards: vec![crate::block::NodeRewardInfo { address: founder.address.clone(), amount: 500.0, category: "Genesis Provision".to_string() }],
+                     transactions: vec!["GENESIS_REWARD: @founder (+100 NVC)".to_string()],
+                     rewards: vec![crate::block::NodeRewardInfo { address: founder.address.clone(), amount: 100.0, category: "Genesis Provision".to_string() }],
                      economy: crate::block::EconomySummary { fees_collected: 0.0, burned: 0.0, epoch_number: 0 },
                  };
                  let genesis_json = serde_json::to_string(&genesis_data).unwrap_or_default();
@@ -301,10 +465,120 @@ fn main() {
                  blockchain.chain.push(genesis);
                  let mut w_lock = wallets.lock().unwrap();
                  w_lock.balances.clear();
-                 w_lock.set_balance(&founder.address, 500.0);
+                 w_lock.set_balance(&founder.address, 100.0);
                  drop(w_lock);
                  if let Ok(mut chain_lock) = api_chain.lock() { *chain_lock = blockchain.chain.clone(); }
-                 println!("[SYSTEM] Nuke complete. Economy reset to Genesis with 500 NVC Payout.");
+                 println!("[SYSTEM] Nuke complete. Economy reset to Genesis with 100 NVC Payout.");
+            } else if msg == "COMMAND_P2P_SYNC" {
+                if node_config.p2p_gossip_enabled {
+                    if let Ok(best_len) = p2p_node.sync_longest_chain() {
+                        if best_len > blockchain.chain.len() {
+                            blockchain.chain = p2p_node.chain.lock().unwrap().clone();
+                            if let Ok(mut chain_lock) = api_chain.lock() {
+                                *chain_lock = blockchain.chain.clone();
+                            }
+                        }
+                    }
+
+                    let known_peers: Vec<String> = p2p_node
+                        .peers
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|p| p.endpoint())
+                        .collect();
+                    *shared_p2p_status.lock().unwrap() = serde_json::json!({
+                        "gossip_enabled": true,
+                        "listening_port": node_config.p2p_port,
+                        "peer_count": known_peers.len(),
+                        "healthy_peers": known_peers.len(),
+                        "unhealthy_peers": 0,
+                        "known_peers": known_peers,
+                        "peer_health": [],
+                        "seed_count": shared_p2p_seeds.lock().unwrap().len(),
+                        "ban_count": shared_p2p_banlist.lock().unwrap().len(),
+                        "banned_peers": shared_p2p_banlist.lock().unwrap().clone(),
+                        "reconnect_attempts": *reconnect_attempts.lock().unwrap(),
+                        "reconnect_backoff_secs": *reconnect_backoff_secs.lock().unwrap(),
+                        "next_reconnect_unix": *reconnect_next_attempt_unix.lock().unwrap(),
+                        "last_reconnect_unix": 0,
+                        "last_sync_unix": chrono::Utc::now().timestamp(),
+                        "chain_blocks": blockchain.chain.len(),
+                        "status": "online"
+                    });
+                }
+            } else if msg.starts_with("COMMAND_P2P_BOOTSTRAP:") {
+                if node_config.p2p_gossip_enabled {
+                    let raw = msg.trim_start_matches("COMMAND_P2P_BOOTSTRAP:");
+                    let seeds: Vec<String> = raw
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+
+                    {
+                        let mut seed_lock = shared_p2p_seeds.lock().unwrap();
+                        *seed_lock = seeds.clone();
+                    }
+
+                    p2p_node.bootstrap_gossip(&seeds);
+                    let _ = p2p_node.sync_longest_chain();
+
+                    if p2p_node.chain.lock().unwrap().len() > blockchain.chain.len() {
+                        blockchain.chain = p2p_node.chain.lock().unwrap().clone();
+                        if let Ok(mut chain_lock) = api_chain.lock() {
+                            *chain_lock = blockchain.chain.clone();
+                        }
+                    }
+
+                    let known_peers: Vec<String> = p2p_node
+                        .peers
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|p| p.endpoint())
+                        .collect();
+                    *shared_p2p_status.lock().unwrap() = serde_json::json!({
+                        "gossip_enabled": true,
+                        "listening_port": node_config.p2p_port,
+                        "peer_count": known_peers.len(),
+                        "healthy_peers": known_peers.len(),
+                        "unhealthy_peers": 0,
+                        "known_peers": known_peers,
+                        "peer_health": [],
+                        "seed_count": shared_p2p_seeds.lock().unwrap().len(),
+                        "ban_count": shared_p2p_banlist.lock().unwrap().len(),
+                        "banned_peers": shared_p2p_banlist.lock().unwrap().clone(),
+                        "reconnect_attempts": *reconnect_attempts.lock().unwrap(),
+                        "reconnect_backoff_secs": *reconnect_backoff_secs.lock().unwrap(),
+                        "next_reconnect_unix": *reconnect_next_attempt_unix.lock().unwrap(),
+                        "last_reconnect_unix": 0,
+                        "last_sync_unix": chrono::Utc::now().timestamp(),
+                        "chain_blocks": blockchain.chain.len(),
+                        "status": "online"
+                    });
+                }
+            } else if msg.starts_with("COMMAND_P2P_BAN:") {
+                let target = msg.trim_start_matches("COMMAND_P2P_BAN:").trim().to_string();
+                if !target.is_empty() {
+                    {
+                        let mut ban = shared_p2p_banlist.lock().unwrap();
+                        if !ban.iter().any(|p| p == &target) {
+                            ban.push(target.clone());
+                        }
+                    }
+                    {
+                        let ban = shared_p2p_banlist.lock().unwrap().clone();
+                        let mut peers = p2p_node.peers.lock().unwrap();
+                        peers.retain(|p| !ban.iter().any(|b| b == &p.endpoint()));
+                    }
+                }
+            } else if msg.starts_with("COMMAND_P2P_UNBAN:") {
+                let target = msg.trim_start_matches("COMMAND_P2P_UNBAN:").trim().to_string();
+                if !target.is_empty() {
+                    let mut ban = shared_p2p_banlist.lock().unwrap();
+                    ban.retain(|p| p != &target);
+                }
             } else {
                 let mut m_lock = shared_mempool.lock().unwrap();
                 println!("[MEMPOOL] Buffering TX ({} pending): {}", m_lock.len() + 1, msg);
@@ -350,7 +624,7 @@ fn main() {
             }
 
             // [PHASE 21] 100 NVC Base Inflation with Halving Support
-            let base_inflation = blockchain.get_epoch_reward();
+            let base_inflation = Blockchain::get_epoch_reward(blockchain.chain.len() as u64);
             pool.reward_pool += base_inflation;
             
             let mut active_nodes = std::vec::Vec::new();
@@ -556,6 +830,12 @@ fn main() {
                 *chain_lock = blockchain.chain.clone();
             }
 
+            if node_config.p2p_gossip_enabled {
+                if let Some(last_block) = blockchain.chain.last() {
+                    p2p_node.broadcast_block(last_block);
+                }
+            }
+
             // Reset Dynamic Gas Fee counter for the new epoch
             {
                 let mut gas_lock = shared_gas.lock().unwrap();
@@ -569,6 +849,89 @@ fn main() {
         }
 
         // 4. Sleep to prevent CPU hogging
+        if node_config.p2p_gossip_enabled {
+            if last_p2p_probe.elapsed().as_secs() >= 10 {
+                let probe = p2p_node.probe_peers();
+                let healthy_count = probe.iter().filter(|p| p.healthy).count();
+                let unhealthy_count = probe.len().saturating_sub(healthy_count);
+                let _removed = p2p_node.prune_unhealthy_peers(&probe);
+
+                {
+                    let ban = shared_p2p_banlist.lock().unwrap().clone();
+                    if !ban.is_empty() {
+                        let mut peers = p2p_node.peers.lock().unwrap();
+                        peers.retain(|p| !ban.iter().any(|b| b == &p.endpoint()));
+                    }
+                }
+
+                let seeds = shared_p2p_seeds.lock().unwrap().clone();
+                let now_unix = chrono::Utc::now().timestamp();
+                let next_allowed = *reconnect_next_attempt_unix.lock().unwrap();
+                let attempt_allowed = now_unix >= next_allowed;
+                let reconnected = if attempt_allowed {
+                    p2p_node.auto_reconnect_if_needed(&seeds)
+                } else {
+                    false
+                };
+
+                let mut last_reconnect_unix = 0;
+                if reconnected {
+                    {
+                        let mut count = reconnect_attempts.lock().unwrap();
+                        *count += 1;
+                    }
+                    last_reconnect_unix = now_unix;
+
+                    let mut backoff_lock = reconnect_backoff_secs.lock().unwrap();
+                    let current_backoff = *backoff_lock;
+                    let jitter_secs = rand::thread_rng().gen_range(0..=2u64);
+                    let next_attempt = now_unix + (current_backoff + jitter_secs) as i64;
+                    *reconnect_next_attempt_unix.lock().unwrap() = next_attempt;
+
+                    let doubled = current_backoff.saturating_mul(2);
+                    *backoff_lock = doubled.min(60);
+                } else if p2p_node.peer_count() > 0 {
+                    *reconnect_backoff_secs.lock().unwrap() = 1;
+                    *reconnect_next_attempt_unix.lock().unwrap() = 0;
+                }
+
+                let known_peers: Vec<String> = p2p_node
+                    .peers
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|p| p.endpoint())
+                    .collect();
+                let next_reconnect_unix = *reconnect_next_attempt_unix.lock().unwrap();
+                *shared_p2p_status.lock().unwrap() = serde_json::json!({
+                    "gossip_enabled": true,
+                    "listening_port": node_config.p2p_port,
+                    "peer_count": known_peers.len(),
+                    "healthy_peers": healthy_count,
+                    "unhealthy_peers": unhealthy_count,
+                    "known_peers": known_peers,
+                    "peer_health": probe,
+                    "seed_count": shared_p2p_seeds.lock().unwrap().len(),
+                    "ban_count": shared_p2p_banlist.lock().unwrap().len(),
+                    "banned_peers": shared_p2p_banlist.lock().unwrap().clone(),
+                    "reconnect_attempts": *reconnect_attempts.lock().unwrap(),
+                    "reconnect_backoff_secs": *reconnect_backoff_secs.lock().unwrap(),
+                    "next_reconnect_unix": next_reconnect_unix,
+                    "last_reconnect_unix": last_reconnect_unix,
+                    "last_sync_unix": chrono::Utc::now().timestamp(),
+                    "chain_blocks": blockchain.chain.len(),
+                    "status": if reconnected {
+                        "reconnecting"
+                    } else if p2p_node.peer_count() == 0 && !seeds.is_empty() && next_reconnect_unix > now_unix {
+                        "backoff_wait"
+                    } else {
+                        "online"
+                    }
+                });
+                last_p2p_probe = std::time::Instant::now();
+            }
+        }
+
         std::thread::sleep(std::time::Duration::from_millis(200));
         
         // No need to manual update shared_staking as it's already shared

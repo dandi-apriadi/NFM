@@ -1,0 +1,256 @@
+import { AlignLeft, CheckCircle2, XCircle, Clock, ArrowRight, Vote, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAppData } from '../context/AppDataContext';
+import { appCreateProposal, appGovernanceIndicators, appVoteProposal } from '../api/client';
+
+const Governance = () => {
+  const navigate = useNavigate();
+  const { data, refresh, requestPrompt, notifySuccess, notifyError } = useAppData();
+  const DUMMY_PROPOSALS = data.proposals;
+  const DUMMY_USER = data.user_profile;
+  const [indicators, setIndicators] = useState<{
+    quorum_target: number;
+    active_proposals: number;
+    total_for: number;
+    total_against: number;
+    quorum_progress: number;
+    veto_risk_count: number;
+    treasury_pool: number;
+  } | null>(null);
+  const reputation = Number(DUMMY_USER.reputation ?? 0);
+  const canVote = reputation > 0;
+
+  useEffect(() => {
+    const loadIndicators = async () => {
+      try {
+        const res = await appGovernanceIndicators() as {
+          quorum_target?: number;
+          active_proposals?: number;
+          total_for?: number;
+          total_against?: number;
+          quorum_progress?: number;
+          veto_risk_count?: number;
+          treasury_pool?: number;
+        };
+        setIndicators({
+          quorum_target: Number(res.quorum_target ?? 0),
+          active_proposals: Number(res.active_proposals ?? 0),
+          total_for: Number(res.total_for ?? 0),
+          total_against: Number(res.total_against ?? 0),
+          quorum_progress: Number(res.quorum_progress ?? 0),
+          veto_risk_count: Number(res.veto_risk_count ?? 0),
+          treasury_pool: Number(res.treasury_pool ?? 0),
+        });
+      } catch {
+        setIndicators(null);
+      }
+    };
+    void loadIndicators();
+  }, [DUMMY_PROPOSALS.length]);
+
+  const handleCreateProposal = async () => {
+    const title = await requestPrompt({
+      title: 'Create Proposal',
+      message: 'Proposal title',
+      placeholder: 'Proposal title',
+      confirmText: 'Next',
+    });
+    if (!title) return;
+    const description =
+      (await requestPrompt({
+        title: 'Create Proposal',
+        message: 'Proposal description',
+        placeholder: 'Describe your proposal',
+        defaultValue: 'Created from NFM Explorer',
+        confirmText: 'Create',
+      })) || 'Created from NFM Explorer';
+
+    try {
+      await appCreateProposal(title, description, DUMMY_USER.nfmAddress);
+      await refresh();
+      notifySuccess('Proposal created');
+    } catch (e) {
+      notifyError(e instanceof Error ? e.message : 'Create proposal failed');
+    }
+  };
+
+  const handleVote = async (proposalId: string, approve: boolean) => {
+    if (!canVote) {
+      notifyError('Voting requires reputation > 0. Participate in missions first to build reputation.');
+      return;
+    }
+
+    try {
+      await appVoteProposal(proposalId, approve, DUMMY_USER.nfmAddress);
+      await refresh();
+      notifySuccess('Vote submitted');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Vote failed';
+      if (message.toLowerCase().includes('no reputation')) {
+        notifyError('Vote rejected by backend: your reputation is still 0. Complete governance tasks first.');
+      } else {
+        notifyError(message);
+      }
+    }
+  };
+
+  const handleDownloadCharter = () => {
+    const rules = [
+      'NFM Governance Charter',
+      '1. 1 NVC locked in staking equals 1 Voting Power (VP).',
+      '2. Proposals require a minimum quorum of 10M VP to be valid.',
+      '3. Active proposals run for 7 epochs.',
+      '4. Malicious proposals may trigger slashing.',
+      `5. Generated at: ${new Date().toISOString()}`,
+    ].join('\n');
+
+    const blob = new Blob([rules], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nfm-governance-charter-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    notifySuccess('Governance charter downloaded');
+  };
+
+  const handleViewProposalDetails = (proposalId: string, forVotes: number, againstVotes: number) => {
+    const total = forVotes + againstVotes;
+    const ratio = total > 0 ? ((forVotes / total) * 100).toFixed(1) : '0.0';
+    notifySuccess(`Proposal ${proposalId}: FOR ${forVotes}, AGAINST ${againstVotes}, FOR ratio ${ratio}%`);
+  };
+
+  return (
+    <div className="animate-in">
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex-col">
+          <h1 className="text-purple flex items-center gap-2 mb-1"><AlignLeft /> Protocol Governance</h1>
+          <p className="text-muted text-xs uppercase tracking-widest font-semibold ml-8 opacity-70">DAO Decision Matrix</p>
+        </div>
+        <div className="flex items-center gap-6">
+          <div className="text-right hide-mobile">
+            <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Your Voting Power</div>
+            <div className="font-mono text-cyan font-bold">{Math.floor(reputation).toLocaleString()} REP</div>
+            {!canVote && <div className="text-[10px] text-muted mt-1">Need reputation &gt; 0 to vote</div>}
+          </div>
+          {indicators && (
+            <div className="text-right hide-mobile">
+              <div className="text-[10px] text-muted uppercase tracking-wider mb-1">Quorum Progress</div>
+              <div className="font-mono text-purple font-bold">{(indicators.quorum_progress * 100).toFixed(1)}%</div>
+              <div className="text-[10px] text-muted mt-1">{indicators.active_proposals} active proposal(s)</div>
+            </div>
+          )}
+          <button className="nfm-btn nfm-btn--primary" onClick={handleCreateProposal}>
+            <Plus size={16} /> Create Proposal
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-6 wrap" style={{ flexWrap: 'wrap' }}>
+        
+        <div className="flex-col gap-6" style={{ flex: '2 1 600px' }}>
+          
+          <div className="nfm-glass-card nfm-glass-card--glow-purple">
+            <div className="flex items-center gap-2 mb-8">
+              <Vote className="text-purple" size={20} />
+              <h2 className="text-lg">Active & Recent Proposals</h2>
+            </div>
+
+            <div className="flex-col gap-5">
+              {DUMMY_PROPOSALS.map(prop => {
+                const totalVotes = prop.forVotes + prop.againstVotes;
+                const forPercentage = totalVotes > 0 ? (prop.forVotes / totalVotes) * 100 : 0;
+                
+                return (
+                  <div key={prop.id} className="nfm-proposal-card">
+                    <div className="flex justify-between items-start mb-3">
+                       <div>
+                         <h3 className="text-base font-bold text-primary mb-1">{prop.title}</h3>
+                         <div className="flex items-center gap-3 text-[10px] text-muted uppercase tracking-wider">
+                           <span>Author: <span className="text-secondary">{prop.creator}</span></span>
+                           <span className="opacity-40">|</span>
+                           <span>ID: <span className="font-mono text-secondary">{prop.id}</span></span>
+                         </div>
+                       </div>
+                       <span className={`nfm-badge nfm-badge--${prop.status === 'ACTIVE' ? 'cyan' : prop.status === 'PASSED' ? 'success' : 'error'}`}>
+                         {prop.status}
+                       </span>
+                    </div>
+
+                    <div className="flex-col gap-4">
+                       <div className="flex justify-between text-xs font-mono mb-1">
+                         <div className="flex items-center gap-2 text-success">
+                           <CheckCircle2 size={12}/> FOR ({(prop.forVotes / 1000).toFixed(0)}k)
+                         </div>
+                         <div className="flex items-center gap-2 text-pink">
+                           AGAINST ({(prop.againstVotes / 1000).toFixed(0)}k) <XCircle size={12}/>
+                         </div>
+                       </div>
+
+                       <div className="nfm-vote-bar">
+                         <div className="nfm-vote-bar__fill--for" style={{ width: `${forPercentage}%` }}></div>
+                         <div className="nfm-vote-bar__fill--against" style={{ width: `${100 - forPercentage}%` }}></div>
+                       </div>
+
+                       <div className="flex justify-between items-center mt-2">
+                         {prop.status === 'ACTIVE' ? (
+                           <div className="flex items-center gap-1.5 text-cyan text-[10px] uppercase font-bold tracking-widest">
+                             <Clock size={12} className="animate-pulse" /> {Math.ceil((prop.endTime - Date.now()) / 86400000)} Days Remaining
+                           </div>
+                         ) : (
+                           <div className="text-[10px] text-muted uppercase tracking-widest font-bold">Voting Cycle Concluded</div>
+                         )}
+                         
+                         {prop.status === 'ACTIVE' ? (
+                           <div className="flex gap-2">
+                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--success)', color: 'var(--success)'}} onClick={() => handleVote(prop.id, true)} disabled={!canVote} title={!canVote ? 'Reputation required' : undefined}>Vote For</button>
+                             <button className="nfm-btn nfm-btn--ghost nfm-btn--sm" style={{borderColor: 'var(--hyper-pink)', color: 'var(--hyper-pink)'}} onClick={() => handleVote(prop.id, false)} disabled={!canVote} title={!canVote ? 'Reputation required' : undefined}>Vote Against</button>
+                           </div>
+                         ) : (
+                            <button className="nfm-btn nfm-btn--ghost nfm-btn--sm border-white-10 text-muted" onClick={() => handleViewProposalDetails(prop.id, prop.forVotes, prop.againstVotes)}>View Details</button>
+                         )}
+                       </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <button className="nfm-btn-more" onClick={() => navigate('/dev')}>
+              <ArrowRight size={14} /> Full Proposal Archive
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-col gap-6" style={{ flex: '1 1 320px' }}>
+          
+          <div className="nfm-glass-card">
+             <h3 className="text-lg text-primary mb-6">Governance Rules</h3>
+             <ul className="nfm-rules-list">
+               <li>1 NVC locked in staking equals 1 Voting Power (VP).</li>
+               <li>Proposals require a minimum quorum of 10M VP to be valid.</li>
+               <li>Active proposals run for exactly 7 epochs (approx. 3 days).</li>
+               <li>Malicious proposals will result in the slashing of the creator's stake.</li>
+             </ul>
+             <button className="nfm-btn nfm-btn--ghost w-full mt-4 text-xs" onClick={handleDownloadCharter}>Download Charter</button>
+          </div>
+
+          <div className="nfm-treasury-card">
+             <div className="text-[10px] text-cyan font-bold uppercase tracking-[0.2em] mb-4">DAO Treasury Pool</div>
+             <div className="font-display text-5xl font-bold text-primary mb-2">{((indicators?.treasury_pool ?? 0) / 1_000_000).toFixed(2)}M</div>
+             <div className="text-xs font-mono text-muted uppercase tracking-widest mb-8">NVC Contained</div>
+             <button className="nfm-btn nfm-btn--primary nfm-btn--sm w-full" onClick={() => navigate('/wallet')}>View Allocation</button>
+             <div className="mt-4 text-[10px] text-muted italic">Veto risks: {indicators?.veto_risk_count ?? 0} | Quorum target: {(indicators?.quorum_target ?? 0).toLocaleString()} VP</div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+export default Governance;

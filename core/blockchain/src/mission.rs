@@ -121,7 +121,7 @@ impl MissionEngine {
                 name: "[Awal] The Newcomer".into(),
                 description: "Selesaikan 10 task pertama Anda. Kuota: 20.000 pendaftar pertama.".into(),
                 difficulty: Difficulty::Easy,
-                reward_nvc: 1000.0,
+                reward_nvc: 100.0,
                 reward_item: None,
                 work_type: WorkType::AiComputation { required_cycles: 10_000 },
             },
@@ -139,7 +139,7 @@ impl MissionEngine {
                 name: "[HARD] Eternal Guardian".into(),
                 description: "Node nonstop 30 hari (dikonversi ke 8640 siklus proof). Reward: Legacy Core!".into(),
                 difficulty: Difficulty::Expert,
-                reward_nvc: 5000.0,
+                reward_nvc: 500.0,
                 reward_item: Some("Legacy Core".to_string()),
                 work_type: WorkType::ConsensusParticipation { required_rounds: 8640 },
             },
@@ -536,7 +536,7 @@ mod tests {
 
         // Step 3: Claim reward
         let reward = engine.claim_reward("nfm_worker", 1).unwrap();
-        assert_eq!(reward, 1000.0);
+        assert_eq!(reward, 100.0);
 
         // Cek sudah masuk completed
         assert!(engine.completed_missions.get("nfm_worker").unwrap().contains(&1));

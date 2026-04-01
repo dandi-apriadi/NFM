@@ -39,12 +39,42 @@ npm run preview
 
 Explorer mengandalkan endpoint berikut dari backend blockchain:
 
+- `GET /api/app/state`
+- `GET /api/p2p/status`
+- `POST /api/app/wallet/transfer`
+- `POST /api/app/governance/proposal`
+- `POST /api/app/governance/vote`
+- `POST /api/app/quest/claim`
+- `POST /api/app/mystery/extract`
+- `POST /api/app/market/purchase`
 - `GET /api/status`
 - `GET /api/blocks`
 - `GET /api/mempool`
 - `GET /api/wallets`
 
 Jika backend tidak aktif atau endpoint berubah, UI akan menampilkan error koneksi.
+
+## Smoke Test Integrasi FE-BE
+
+Setelah node aktif di port `3000`, jalankan smoke test berikut dari root repo:
+
+```powershell
+./scripts/app_actions_smoke.ps1
+```
+
+Untuk stress smoke ringan, jalankan beberapa iterasi sekaligus:
+
+```powershell
+./scripts/app_actions_smoke.ps1 -Repeat 20
+```
+
+Script ini mengetes flow action utama yang dipakai frontend:
+- transfer wallet
+- create proposal
+- vote proposal
+- claim quest
+- mystery extract
+- market purchase
 
 ## Catatan Progress
 

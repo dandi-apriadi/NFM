@@ -2,6 +2,7 @@
 name = "nfm-core-blockchain"
 version = "0.1.0"
 edition = "2021"
+default-run = "nfm-core-blockchain"
 
 [dependencies]
 sha2 = "0.10"
@@ -13,3 +14,4 @@ tiny_http = "0.12"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 sled = "0.34"
+nfm-ai-engine = { path = "../ai-engine" }

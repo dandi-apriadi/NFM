@@ -1,0 +1,53 @@
+name: Integration Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  integration-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/nfm-explorer/package-lock.json
+
+      - name: Verify Rust toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Verify Node.js toolchain
+        shell: pwsh
+        run: |
+          node --version
+          npm --version
+
+      - name: Run integration smoke (node start + health + app actions)
+        shell: pwsh
+        run: |
+          ./scripts/integration_e2e_smoke.ps1 -SmokeRepeat 1 -HealthTimeoutSec 90 -ArtifactDir artifacts/integration-smoke
+
+      - name: Upload integration smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-smoke-artifacts
+          path: artifacts/integration-smoke
+          if-no-files-found: warn
